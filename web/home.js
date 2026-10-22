@@ -216,9 +216,22 @@
 
   function renderQuotes() {
     var q = $('quotes'), coins = Data.activeCoins();
+    // Same coins as last time? Update the numbers in place. Rebuilding the whole
+    // strip made the top-right corner blink on every price refresh (every 30 s).
+    var rows = q.querySelectorAll('.q');
+    var same = rows.length === coins.length;
+    for (var r = 0; same && r < rows.length; r++) same = rows[r].getAttribute('data-coin') === coins[r];
+    if (same) {
+      for (var s = 0; s < coins.length; s++) {
+        var value = rows[s].lastElementChild;
+        if (value) value.textContent = Data.compact(Data.prices[coins[s]]);
+      }
+      return;
+    }
     q.innerHTML = '';
     for (var i = 0; i < coins.length; i++) {
       var item = el('span', 'q', q);
+      item.setAttribute('data-coin', coins[i]);
       coin(coins[i], item);
       el('span', '', item, Data.compact(Data.prices[coins[i]]));
     }
@@ -288,7 +301,15 @@
 
   // MARK: - Shelf
 
+  var shelfSig = '';
+
   function renderShelf() {
+    // Same apps as the ones already painted? Leave them alone: wiping and rebuilding
+    // the tiles flashed the shelf every time the app came back to the foreground.
+    var sig = '';
+    for (var k = 0; k < shelf.length; k++) sig += shelf[k].id + '|';
+    if (sig === shelfSig && $('tiles').children.length === shelf.length) return;
+    shelfSig = sig;
     var n = shelf.length, gap = 48, pad = 40;
     // 16:9 tiles, as on Android: never taller than 126, and the glass keeps its bottom edge.
     var tw = Math.min(126 * 16 / 9, (1760 - Math.max(0, n - 1) * gap) / Math.max(1, n)), th = tw * 9 / 16;
@@ -826,6 +847,51 @@
 
   // MARK: - Start
 
+  var revealed = false;
+
+  // Reveal the home only once the shelf and the picks are painted: it used to
+  // appear in stages (empty -> shelf -> cards), which reads as a flash on a TV.
+  function revealWhenPainted() {
+    if (revealed) return;
+    var tiles = $('tiles'), cardsEl = $('cards');
+    var painted = tiles && tiles.children.length > 0 &&
+                  (body.classList.contains('no-picks') || (cardsEl && cardsEl.children.length > 0));
+    if (!painted) return;
+    revealed = true;
+    setClass(body, 'ready', true);
+  }
+
+  // Developer Mode reminder. LG's session lasts 1000 hours; this TV's token file
+  // (/var/luna/preferences/devmode_enabled) was written on 2026-10-22 17:05, so
+  // the estimate is that moment plus 1000 hours. After pressing EXTEND in the
+  // Developer Mode app, rebuild with the new date.
+  var DEVMODE_EXPIRES = new Date('2026-12-03T09:05:00-03:00');
+
+  function renderDevMode() {
+    var box = $('devmode');
+    if (!box) return;
+    var left = DEVMODE_EXPIRES.getTime() - Date.now();
+    var days = Math.ceil(left / 86400000);
+    // Hidden while there is time: the pill only appears when the session is
+    // close to expiring (15 days), and turns red in the last five.
+    var text = '';
+    var warn = false, crit = false;
+    if (left <= 0) {
+      text = 'Developer Mode expirou — reative no app Developer Mode';
+      crit = true;
+    } else if (days <= 5) {
+      text = 'Developer Mode expira em ' + days + (days === 1 ? ' dia' : ' dias') + ' — renove agora';
+      crit = true;
+    } else if (days <= 15) {
+      text = 'Developer Mode expira em ' + days + ' dias';
+      warn = true;
+    }
+    box.textContent = text;
+    setClass(box, 'on', !!text);
+    setClass(box, 'warn', warn);
+    setClass(box, 'crit', crit);
+  }
+
   function renderAll() {
     renderTop();
     renderQuotes();
@@ -837,6 +903,8 @@
     checkNight();
     if (st.zone === Z.SETTINGS) renderSettings();
     updateFocus();
+    revealWhenPainted();
+    renderDevMode();
   }
 
   function loadApps(done) {
@@ -866,7 +934,14 @@
     renderCards();
     renderPanels();
     checkNight();
+    revealWhenPainted();
   });
+
+  // Safety net: never leave the screen hidden if the data never arrives.
+  setTimeout(function () {
+    revealed = true;
+    setClass(body, 'ready', true);
+  }, 2500);
 
   function reopened() {
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
@@ -894,6 +969,7 @@
   setInterval(function () {
     renderClock();
     checkNight();
+    renderDevMode();
     Data.refresh();
     if (!saverOn && !sheetOpen() && Date.now() - idleAt > SAVER_AFTER) showSaver();
     if (saverOn) tickSaverClock($('saver').querySelector('.clock'));

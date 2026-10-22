@@ -524,3 +524,42 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* The Magic Remote's pointer: no text selection, no outlines. */
 * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+/* Nothing is painted until the first pass has the shelf and the picks: the home
+   used to appear in stages (empty, then shelf, then cards), which reads as a
+   flash on a TV. body.ready is set by home.js once that first pass is complete. */
+#stage { opacity: 0; transition: opacity .25s ease; }
+body.ready #stage { opacity: 1; }
+
+/* Developer Mode reminder: a pill at the top centre of the screen. It stays
+   hidden while there is plenty of time and only appears when the session is
+   close to expiring (amber at 15 days, red at 5) — when it runs out, the TV
+   removes every developer app, this one included. */
+#devmode {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  -webkit-transform: translateX(-50%);
+  transform: translateX(-50%);
+  display: none;
+  padding: 20px 38px;
+  border-radius: 999px;
+  font-size: 40px;
+  line-height: 1;
+  white-space: nowrap;
+  color: #8a5a00;
+  background: rgba(255, 204, 0, 0.26);
+  box-shadow: inset 0 0 0 2px rgba(255, 204, 0, 0.55), 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+#devmode.on { display: inline-block; }
+
+.night #devmode { color: #FFD166; }
+
+#devmode.crit {
+  color: #8a1c1c;
+  background: rgba(255, 69, 58, 0.26);
+  box-shadow: inset 0 0 0 2px rgba(255, 69, 58, 0.6), 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+.night #devmode.crit { color: #FF6961; }
