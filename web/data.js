@@ -258,6 +258,9 @@ var Data = (function () {
   var cache = stored('recs') || {};
   var picks = cache.picks || [], listAt = cache.listAt || 0, period = cache.period, listLang = cache.lang || '', stamp = cache.stamp || '';
   var fetchingRecs = false, failedAt = 0, recsError = '';
+  // Whether the first attempt to get this hour's picks is over (it worked, or it
+  // failed): until then the home shows no clock, because the picks may still come.
+  var firstDone = false;
 
   function saveRecs() { store('recs', {picks: picks, listAt: listAt, period: period, lang: listLang, stamp: stamp}); }
 
@@ -450,15 +453,16 @@ var Data = (function () {
   function refreshRecs() {
     if (!KEY || fetchingRecs || !installed.length) return;
     var t = Date.now(), p = hourPeriod(new Date()), st = sourceStamp();
-    if (st === stamp && failedAt && t - failedAt < 10 * 60000 && t >= failedAt) return;
+    if (st === stamp && failedAt && t - failedAt < 10 * 60000 && t >= failedAt) { firstDone = true; return; }
     var stale = st !== stamp || p !== period || t - listAt > 6 * 3600000 || t < listAt || !picks.length || listLang !== I18N.lang;
     var wanted = all(), missing = false;
     for (var i = 0; i < wanted.length; i++) missing = missing || !wanted[i].detailed;
-    if (!stale && !missing) return;
+    if (!stale && !missing) { firstDone = true; return; }
     fetchingRecs = true;
     stamp = st;
     function finish(err) {
       fetchingRecs = false;
+      firstDone = true;
       if (err) { recsError = err.message; failedAt = Date.now(); } else { recsError = ''; failedAt = 0; }
       saveRecs();
       changed();
@@ -514,6 +518,8 @@ var Data = (function () {
     get pricesAt() { return pricesAt; },
     activeCoins: activeCoins,
     hasKey: function () { return !!KEY; },
+    /** No key at all, or the first picks fetch is over: the home knows whether picks exist. */
+    settled: function () { return !KEY || firstDone; },
     recsError: function () { return recsError; },
     picks: now,
     showcase: all,

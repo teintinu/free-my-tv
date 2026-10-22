@@ -20,12 +20,24 @@
     return e;
   }
 
-  function sym(name, parent, size) {
-    var s = el('span', 'sym', parent);
+  /** Points a symbol at another PNG, and leaves it alone when it already is that one. */
+  function setSym(s, name) {
+    if (s.__sym === name) return;
+    s.__sym = name;
     s.style.webkitMaskImage = 'url(symbols/' + name + '.png)';
     s.style.maskImage = 'url(symbols/' + name + '.png)';
+  }
+
+  function sym(name, parent, size) {
+    var s = el('span', 'sym', parent);
+    setSym(s, name);
     if (size) { s.style.width = size + 'px'; s.style.height = size + 'px'; }
     return s;
+  }
+
+  /** Writes text only when it changed: an identical write is a DOM mutation and a repaint. */
+  function setText(node, text) {
+    if (node && node.textContent !== text) node.textContent = text;
   }
 
   function coin(i, parent) {
@@ -50,11 +62,27 @@
     else if (!on && hasClass(e, c)) e.className = (' ' + e.className + ' ').replace(' ' + c + ' ', ' ').replace(/^\s+|\s+$/g, '');
   }
 
+  /** A transform written only when it changed: an identical write still costs a style pass. */
+  function setTransform(node, value) {
+    if (!node || node.__t === value) return;
+    node.__t = value;
+    node.style.webkitTransform = node.style.transform = value;
+  }
+
   var stage = $('stage'), body = document.body;
 
+  // The home is built while it is still invisible, and it opens with the theme it
+  // already computed: without this the day/night colours transitioned from the
+  // other theme, so a night start showed a white screen for a second or two.
+  // markReady() takes it off two frames after the reveal.
+  setClass(body, 'no-anim', true);
+
   /** The 1920 × 1080 stage fills the window (on the TV it already is 1920 × 1080). */
+  var fitScale = -1;
   function fit() {
     var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    if (s === fitScale) return;
+    fitScale = s;
     stage.style.webkitTransform = stage.style.transform = s === 1 ? '' : 'scale(' + s + ')';
   }
 
@@ -95,6 +123,93 @@
   }
 
   /** An app's face: its own icon on its brand color (or its name, when the icon can't be read). */
+  // --- Images: load and decode before the view is swapped -------------------
+  // On this TV (webOS 4.x, Chromium 53) a background-image paints only once the
+  // file has arrived *and* been decoded, so a view swapped first shows empty
+  // boxes — on a 1080p TV that reads as a flash. There is no img.decode() in
+  // Chromium 53, so the decode is forced by drawing into a 1x1 canvas.
+  var preloaded = {};      // url -> true once it arrived and was decoded, false when it failed (no retry)
+  var drawable = {};       // url -> Image kept ready to draw at once: the blurred background, a few at most
+  var drawableKeys = [];
+
+  function decodeImage(url, done) {
+    var img = new Image();
+    function finish(ok) {
+      if (ok) {
+        try {
+          var c = document.createElement('canvas');
+          c.width = c.height = 1;
+          c.getContext('2d').drawImage(img, 0, 0, 1, 1);
+        } catch (e) {}
+      }
+      preloaded[url] = ok;
+      done();
+    }
+    img.onload = function () { finish(true); };
+    img.onerror = function () { finish(false); };
+    img.src = url;
+  }
+
+  function preloadImages(urls, done, timeout) {
+    var pending = [], i, u;
+    for (i = 0; i < urls.length; i++) {
+      u = urls[i];
+      if (u && preloaded[u] === undefined && pending.indexOf(u) === -1) pending.push(u);
+    }
+    if (!pending.length) { done(); return; }
+    var left = pending.length, finished = false, timer = null;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      done();
+    }
+    // A slow or broken file must never hold the screen hostage.
+    timer = setTimeout(finish, timeout || 2500);
+    for (i = 0; i < pending.length; i++) {
+      decodeImage(pending[i], (function () {
+        return function () { if (--left <= 0) finish(); };
+      })());
+    }
+  }
+
+  // Two frames: the first commits the new DOM, the second paints it with the
+  // images already decoded. Swapping inside a single frame is what makes the
+  // empty state visible.
+  function afterPaint(fn) {
+    requestAnimationFrame(function () { requestAnimationFrame(fn); });
+  }
+
+  /** Keeps an image decoded so the background canvas can be drawn in the same frame as the swap. */
+  function prepBackdrop(url, done) {
+    if (!url || drawable[url]) { done(); return; }
+    var img = new Image();
+    img.onload = img.onerror = function () {
+      drawable[url] = img;
+      drawableKeys.push(url);
+      if (drawableKeys.length > 8) delete drawable[drawableKeys.shift()];
+      done();
+    };
+    img.src = url;
+  }
+
+  function iconUrls() {
+    var urls = [];
+    for (var i = 0; i < apps.length; i++) if (apps[i].icon) urls.push(apps[i].icon);
+    return urls;
+  }
+
+  // The symbols are mask images: a new span that points at a PNG not decoded yet
+  // paints empty for a frame. Loading them up front keeps every icon whole.
+  var SYMBOLS = ['live_tv', 'hdmi', 'settings', 'apps', 'tv_settings', 'sunny', 'clear_night', 'partly_cloudy_day',
+    'partly_cloudy_night', 'cloud', 'foggy', 'snowflake', 'thunderstorm', 'rainy', 'sunrise', 'sunset'];
+
+  function symbolUrls() {
+    var urls = [];
+    for (var i = 0; i < SYMBOLS.length; i++) urls.push('symbols/' + SYMBOLS[i] + '.png');
+    return urls;
+  }
+
   function face(app, box, wordSize) {
     var k = shelfKey(app);
     var top = k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
@@ -105,7 +220,10 @@
     if (wordSize) word.style.fontSize = wordSize + 'px';
     if (app.icon) {
       var img = el('img', '', box);
-      word.style.visibility = 'hidden';
+      // An icon already loaded is hidden at once; one that isn't keeps the name
+      // until it loads, so a tile is never an empty box.
+      if (preloaded[app.icon] === true) word.style.visibility = 'hidden';
+      img.onload = function () { word.style.visibility = 'hidden'; };
       img.onerror = function () { img.parentNode.removeChild(img); word.style.visibility = ''; };
       img.src = app.icon;
     }
@@ -158,7 +276,7 @@
     list = document.querySelectorAll('#apps .cell');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.APPS && st.grid === i);
     var rows = Math.max(1, Math.ceil(others.length / 5)), r = Math.floor(st.grid / 5), first = Math.max(0, Math.min(rows - 3, r - 1));
-    $('apps').lastChild.style.webkitTransform = $('apps').lastChild.style.transform = 'translateY(' + (-first * 239) + 'px)';
+    setTransform($('apps').lastChild, 'translateY(' + (-first * 239) + 'px)');
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
@@ -170,7 +288,7 @@
     var holder = sheet.querySelector('.rows');
     if (!holder) return;
     var visible = 7, first = Math.max(0, Math.min(rows.length - visible, index - 3));
-    holder.style.webkitTransform = holder.style.transform = 'translateY(' + (-first * 78) + 'px)';
+    setTransform(holder, 'translateY(' + (-first * 78) + 'px)');
   }
 
   function nearest(nodes, x) {
@@ -192,19 +310,27 @@
 
   var TAB_KIND = [null, 'movie', 'tv'];
 
+  var topSig = '';
+
   function renderTop() {
-    $('title').textContent = tr('Para você', 'For You', 'Para ti');
+    var title = tr('Para você', 'For You', 'Para ti');
+    var names = [tr('Explorar', 'Explore', 'Explorar'), tr('Filmes', 'Movies', 'Películas'), tr('Séries', 'Shows', 'Series')];
+    var defs = [['live_tv', tr('TV aberta', 'Live TV', 'TV en vivo')], ['hdmi', tr('Entradas HDMI', 'HDMI Inputs', 'Entradas HDMI')],
+      ['settings', tr('Ajustes', 'Settings', 'Ajustes')]];
+    // Same texts as the ones already painted? Leave the nodes alone: rebuilding the
+    // tabs and the glass buttons re-created their icon masks on every render.
+    var sig = title + '|' + names.join('|') + '|' + defs.join('|');
+    if (sig === topSig) return;
+    topSig = sig;
+    $('title').textContent = title;
     var tabs = $('tabs');
     tabs.innerHTML = '';
-    var names = [tr('Explorar', 'Explore', 'Explorar'), tr('Filmes', 'Movies', 'Películas'), tr('Séries', 'Shows', 'Series')];
     for (var i = 0; i < 3; i++) {
       var t = el('button', 'tab', tabs, names[i]);
       hover(t, Z.TOP, i);
     }
     var buttons = $('buttons');
     buttons.innerHTML = '';
-    var defs = [['live_tv', tr('TV aberta', 'Live TV', 'TV en vivo')], ['hdmi', tr('Entradas HDMI', 'HDMI Inputs', 'Entradas HDMI')],
-      ['settings', tr('Ajustes', 'Settings', 'Ajustes')]];
     for (var b = 0; b < 3; b++) {
       var r = el('button', 'round' + (b === 2 ? ' last' : ''), buttons);
       r.style.left = (1596 + 88 * b) + 'px';
@@ -220,11 +346,13 @@
     // strip made the top-right corner blink on every price refresh (every 30 s).
     var rows = q.querySelectorAll('.q');
     var same = rows.length === coins.length;
-    for (var r = 0; same && r < rows.length; r++) same = rows[r].getAttribute('data-coin') === coins[r];
+    // data-coin holds the index as a string: comparing it with the number made every
+    // refresh look different, so the strip was rebuilt on every tick after all.
+    for (var r = 0; same && r < rows.length; r++) same = rows[r].getAttribute('data-coin') === String(coins[r]);
     if (same) {
       for (var s = 0; s < coins.length; s++) {
         var value = rows[s].lastElementChild;
-        if (value) value.textContent = Data.compact(Data.prices[coins[s]]);
+        if (value) setText(value, Data.compact(Data.prices[coins[s]]));
       }
       return;
     }
@@ -239,13 +367,40 @@
 
   // MARK: - Picks and background
 
+  var cardsGen = 0;
+
   function renderCards() {
     var list = Data.picks(TAB_KIND[st.tab]);
     var holder = $('cards');
-    setClass(body, 'no-picks', !list.length);
+    // Without picks the big clock takes their place — but only once we know there
+    // will be none: showing it while the first fetch runs made it vanish again
+    // when the posters arrived.
+    setNoPicks(!list.length && Data.settled());
     var same = list.length === cards.length;
     for (var i = 0; same && i < list.length; i++) same = list[i].id === cards[i].id && list[i].backdrop === cards[i].backdrop && list[i].meta === cards[i].meta;
     if (same && holder.children.length === list.length) return;
+    // Every poster (plus the small one the blurred backdrop is drawn from) is
+    // decoded first; only then the cards are swapped in, in one painted frame.
+    var backUrl = list.length ? Data.image(list[0].backdrop, 'w300') : '';
+    var urls = [];
+    for (var u = 0; u < list.length; u++) {
+      if (list[u].backdrop) urls.push(Data.image(list[u].backdrop, u === 0 ? 'w1280' : 'w300'));
+    }
+    if (backUrl) urls.push(backUrl);
+    var gen = ++cardsGen;
+    preloadImages(urls, function () {
+      if (gen !== cardsGen) return;      // a newer swap already took over
+      prepBackdrop(backUrl, function () {
+        if (gen !== cardsGen) return;
+        afterPaint(function () {
+          if (gen !== cardsGen) return;
+          swapCards(list, holder);
+        });
+      });
+    });
+  }
+
+  function swapCards(list, holder) {
     cards = list;
     holder.innerHTML = '';
     var rects = [[80, 1040], [1160, 320], [1520, 320]];
@@ -254,7 +409,9 @@
       card.style.left = rects[c][0] + 'px';
       card.style.width = rects[c][1] + 'px';
       var img = el('div', 'img', card);
-      img.style.backgroundImage = 'url(' + Data.image(p.backdrop, c === 0 ? 'w1280' : 'w780') + ')';
+      // 1040px wide for the hero card, 320px for the two beside it: matching the
+      // slot keeps the download honest (w780 for a 320px slot was 6x the bytes).
+      img.style.backgroundImage = 'url(' + Data.image(p.backdrop, c === 0 ? 'w1280' : 'w300') + ')';
       el('div', 'name', card, p.title);
       if (c === 0 && p.meta) el('div', 'meta', card, p.meta);
       hover(card, Z.CARDS, c);
@@ -262,7 +419,9 @@
     st.card = Math.min(st.card, Math.max(0, list.length - 1));
     if (!list.length && st.zone === Z.CARDS) st.zone = Z.SHELF;
     backdrop(list.length ? Data.image(list[0].backdrop, 'w300') : '');
+    setClass(body, 'cards-ready', true);
     updateFocus();
+    revealWhenPainted();
   }
 
   var bgUrl = null, bgFront = 'bgA';
@@ -277,31 +436,53 @@
       setClass($('bgB'), 'on', false);
       return;
     }
-    var img = new Image();
-    img.onload = function () {
+    function paint(img) {
       if (bgUrl !== url) return;
       var canvas = $(next), ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       setClass(canvas, 'on', true);
       setClass($(bgFront), 'on', false);
       bgFront = next;
+    }
+    // Already decoded (the cards preloaded it): draw it now, so the first painted
+    // frame already has its background instead of fading one in a moment later.
+    if (drawable[url] && drawable[url].width) { paint(drawable[url]); return; }
+    var img = new Image();
+    img.onload = function () {
+      drawable[url] = img;
+      drawableKeys.push(url);
+      if (drawableKeys.length > 8) delete drawable[drawableKeys.shift()];
+      paint(img);
     };
     img.src = url;
   }
 
   function renderClock() {
-    var d = new Date(), c = $('clock');
-    c.firstChild.textContent = Data.time(d.getTime());
+    var c = $('clock');
+    // The clock shows only where the picks would be: with the picks up its text is
+    // left alone, so an idle home has nothing to repaint every minute.
+    if (!hasClass(body, 'no-picks')) return;
+    var d = new Date();
+    setText(c.firstChild, Data.time(d.getTime()));
+    var date;
     try {
-      c.lastChild.textContent = d.toLocaleDateString(I18N.locale(), {weekday: 'long', day: 'numeric', month: 'long'});
+      date = d.toLocaleDateString(I18N.locale(), {weekday: 'long', day: 'numeric', month: 'long'});
     } catch (e) {
-      c.lastChild.textContent = d.toDateString();
+      date = d.toDateString();
     }
+    setText(c.lastChild, date);
+  }
+
+  /** The picks or the clock, one or the other: the clock is filled the moment it shows. */
+  function setNoPicks(on) {
+    if (hasClass(body, 'no-picks') === on) return;
+    setClass(body, 'no-picks', on);
+    if (on) renderClock();
   }
 
   // MARK: - Shelf
 
-  var shelfSig = '';
+  var shelfSig = '', shelfGen = 0;
 
   function renderShelf() {
     // Same apps as the ones already painted? Leave them alone: wiping and rebuilding
@@ -309,7 +490,22 @@
     var sig = '';
     for (var k = 0; k < shelf.length; k++) sig += shelf[k].id + '|';
     if (sig === shelfSig && $('tiles').children.length === shelf.length) return;
-    shelfSig = sig;
+    // A logo not decoded yet would paint empty in the rebuilt tile: load them first
+    // (they come from memory in every normal run, so this is synchronous).
+    var urls = [], missing = false;
+    for (var u = 0; u < shelf.length; u++) {
+      if (shelf[u].icon) { urls.push(shelf[u].icon); if (preloaded[shelf[u].icon] === undefined) missing = true; }
+    }
+    if (!missing) { shelfSig = sig; drawShelf(); return; }
+    var gen = ++shelfGen;
+    preloadImages(urls, function () {
+      if (gen !== shelfGen) return;
+      shelfSig = sig;
+      drawShelf();
+    });
+  }
+
+  function drawShelf() {
     var n = shelf.length, gap = 48, pad = 40;
     // 16:9 tiles, as on Android: never taller than 126, and the glass keeps its bottom edge.
     var tw = Math.min(126 * 16 / 9, (1760 - Math.max(0, n - 1) * gap) / Math.max(1, n)), th = tw * 9 / 16;
@@ -337,11 +533,10 @@
 
   // MARK: - Drawer
 
-  var drawerItems = [], drawerInputs = 0;
+  var drawerItems = [], drawerInputs = 0, drawerSig = '';
 
   function renderDrawer() {
     var d = $('drawer');
-    d.innerHTML = '';
     drawerItems = [];
     for (var i = 0; i < inputs.length; i++) {
       var x = inputs[i];
@@ -353,37 +548,64 @@
     drawerItems.push({label: tr('Ajustes da TV', 'TV Settings', 'Ajustes del TV'), symbol: 'tv_settings', run: tvSettings});
     var n = drawerItems.length, gap = 18, groupGap = 56, groups = drawerInputs > 0 && drawerInputs < n ? 2 : 1;
     var tw = Math.min(230, (1760 - Math.max(0, n - groups) * gap - (groups - 1) * groupGap) / Math.max(1, n));
-    var xPos = 80;
-    for (var k = 0; k < n; k++) {
-      if (k === drawerInputs && k > 0) {
-        xPos += groupGap - gap;
-        el('div', 'row-title', d, tr('Atalhos', 'Shortcuts', 'Accesos directos')).style.left = (xPos + 4) + 'px';
+    // The keys are rebuilt only when what they show changed (the app was opened
+    // again, an input came on): rebuilding them re-created their icon masks.
+    var sig = I18N.lang + '|';
+    for (var s = 0; s < n; s++) sig += drawerItems[s].label + ',' + drawerItems[s].symbol + ',' + (drawerItems[s].off ? 1 : 0) + '|';
+    if (sig !== drawerSig) {
+      drawerSig = sig;
+      panelsSig = '';
+      d.innerHTML = '';
+      var xPos = 80;
+      for (var k = 0; k < n; k++) {
+        if (k === drawerInputs && k > 0) {
+          xPos += groupGap - gap;
+          el('div', 'row-title', d, tr('Atalhos', 'Shortcuts', 'Accesos directos')).style.left = (xPos + 4) + 'px';
+        }
+        if (k === 0 && drawerInputs) el('div', 'row-title', d, tr('Entradas', 'Inputs', 'Entradas')).style.left = '84px';
+        var item = drawerItems[k], key = el('div', 'key glass' + (item.off ? ' off' : ''), d);
+        key.style.left = xPos + 'px';
+        key.style.width = tw + 'px';
+        sym(item.symbol, key);
+        el('div', 'label', key, item.label);
+        hover(key, Z.DRAWER, k);
+        xPos += tw + gap;
       }
-      if (k === 0 && drawerInputs) el('div', 'row-title', d, tr('Entradas', 'Inputs', 'Entradas')).style.left = '84px';
-      var item = drawerItems[k], key = el('div', 'key glass' + (item.off ? ' off' : ''), d);
-      key.style.left = xPos + 'px';
-      key.style.width = tw + 'px';
-      sym(item.symbol, key);
-      el('div', 'label', key, item.label);
-      hover(key, Z.DRAWER, k);
-      xPos += tw + gap;
     }
     renderPanels();
     updateFocus();
   }
 
+  // The weather and the prices change every few minutes. The panels are built once
+  // and after that only their text changes: rebuilding them took the glass, the
+  // icons and every row out of the screen and put them back on each refresh.
+  var panelsSig = '', panels = {weather: null, prices: null};
+
   function renderPanels() {
+    var wx = Prefs.weather(), coins = Data.activeCoins(), qt = coins.length > 0;
+    // The structure follows which panels show, which coins, and whether there is
+    // weather data at all yet.
+    var sig = (wx ? 'w' + (Data.weather ? 1 : 0) : '-') + '|' + (qt ? 'q' + coins.join(',') : '-');
+    if (sig !== panelsSig) {
+      panelsSig = sig;
+      buildPanels(wx, qt, coins);
+    }
+    if (panels.weather) updateWeather(panels.weather);
+    if (panels.prices) updatePrices(panels.prices, coins);
+  }
+
+  function buildPanels(wx, qt, coins) {
     var d = $('drawer');
     var old = d.querySelectorAll('.panel');
     for (var o = 0; o < old.length; o++) d.removeChild(old[o]);
-    var wx = Prefs.weather(), coins = Data.activeCoins(), qt = coins.length > 0;
+    panels = {weather: null, prices: null};
     var split = 80 + 1760 * 0.585;
     if (wx) {
       var w = el('div', 'panel glass', d);
       w.id = 'weather';
       w.style.left = '80px';
       w.style.width = ((qt ? split - 16 : 1840) - 80) + 'px';
-      renderWeather(w);
+      panels.weather = buildWeather(w);
     }
     if (qt) {
       var q = el('div', 'panel glass', d);
@@ -391,50 +613,89 @@
       var left = wx ? split + 16 : 80;
       q.style.left = left + 'px';
       q.style.width = (1840 - left) + 'px';
-      renderPrices(q, coins);
+      panels.prices = buildPrices(q, coins);
     }
   }
 
-  function renderWeather(card) {
-    el('div', 'head', card, Data.city || tr('Clima', 'Weather', 'Clima'));
+  function buildWeather(card) {
+    var box = {head: el('div', 'head', card), hours: [], sun: []};
     var w = Data.weather;
     if (!w) {
       el('div', 'cond', card, tr('Sem dados do clima agora.', 'No weather data right now.', 'No hay datos del clima ahora.')).style.top = '96px';
-      return;
+      return box;
     }
     var now = el('div', 'now', card);
-    sym(Data.symbol(w.code, w.isDay), now);
-    el('span', 'temp', now, Data.degrees(w.temp));
-    el('div', 'cond', card, Data.condition(w.code, w.isDay));
-    el('div', 'range', card, I18N.lang === 'ru' ? 'Макс. ' + Data.degrees(w.max) + '   Мин. ' + Data.degrees(w.min) : tr('Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min), 'H:' + Data.degrees(w.max) + '   L:' + Data.degrees(w.min),
-        'Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min)));
+    box.sym = sym(Data.symbol(w.code, w.isDay), now);
+    box.temp = el('span', 'temp', now);
+    box.cond = el('div', 'cond', card);
+    box.range = el('div', 'range', card);
     el('div', 'split', card);
     var hours = el('div', 'hours', card), width = parseFloat(card.style.width) - 30 - 422, hw = width / 6;
-    for (var i = 0; i < w.hours.length && i < 6; i++) {
-      var h = el('div', 'hour', hours), x = w.hours[i];
+    for (var i = 0; i < 6; i++) {
+      var h = el('div', 'hour', hours);
       h.style.left = (hw * i) + 'px';
       h.style.width = hw + 'px';
-      el('div', 't', h, Data.hour(x.at));
-      sym(Data.symbol(x.code, x.day), h);
-      el('div', 'd', h, Data.degrees(x.temp));
+      box.hours.push({row: h, t: el('div', 't', h), sym: sym('sunny', h), d: el('div', 'd', h)});
     }
     var sun = el('div', 'sun', card);
-    if (w.sunrise) { var a = el('span', '', sun); sym('sunrise', a); a.appendChild(document.createTextNode(tr('Nascer ', 'Sunrise ', 'Amanecer ') + Data.time(w.sunrise))); }
-    if (w.sunset) { var b = el('span', '', sun); sym('sunset', b); b.appendChild(document.createTextNode(tr('Pôr do sol ', 'Sunset ', 'Atardecer ') + Data.time(w.sunset))); }
+    for (var s = 0; s < 2; s++) {
+      var span = el('span', '', sun), text = document.createTextNode('');
+      span.appendChild(text);
+      box.sun.push({row: span, sym: sym(s ? 'sunset' : 'sunrise', span), text: text});
+    }
+    return box;
   }
 
-  function renderPrices(card, coins) {
-    el('div', 'head', card, tr('Cotações', 'Crypto', 'Cripto'));
-    var stale = Data.staleness(Data.pricesAt, 5 * 60000);
-    el('div', 'side', card, stale || tr('variação em 24 h', '24h change', 'variación en 24 h'));
+  function rangeText(w) {
+    if (I18N.lang === 'ru') return 'Макс. ' + Data.degrees(w.max) + '   Мин. ' + Data.degrees(w.min);
+    return tr('Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min), 'H:' + Data.degrees(w.max) + '   L:' + Data.degrees(w.min),
+      'Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min));
+  }
+
+  function updateWeather(box) {
+    setText(box.head, Data.city || tr('Clima', 'Weather', 'Clima'));
+    var w = Data.weather;
+    if (!w) return;
+    setSym(box.sym, Data.symbol(w.code, w.isDay));
+    setText(box.temp, Data.degrees(w.temp));
+    setText(box.cond, Data.condition(w.code, w.isDay));
+    setText(box.range, rangeText(w));
+    var hours = w.hours || [];
+    for (var i = 0; i < box.hours.length; i++) {
+      var r = box.hours[i], x = hours[i];
+      if (r.row.style.display !== (x ? '' : 'none')) r.row.style.display = x ? '' : 'none';
+      if (!x) continue;
+      setText(r.t, Data.hour(x.at));
+      setSym(r.sym, Data.symbol(x.code, x.day));
+      setText(r.d, Data.degrees(x.temp));
+    }
+    setText(box.sun[0].text, w.sunrise ? tr('Nascer ', 'Sunrise ', 'Amanecer ') + Data.time(w.sunrise) : '');
+    if (box.sun[0].row.style.display !== (w.sunrise ? '' : 'none')) box.sun[0].row.style.display = w.sunrise ? '' : 'none';
+    setText(box.sun[1].text, w.sunset ? tr('Pôr do sol ', 'Sunset ', 'Atardecer ') + Data.time(w.sunset) : '');
+    if (box.sun[1].row.style.display !== (w.sunset ? '' : 'none')) box.sun[1].row.style.display = w.sunset ? '' : 'none';
+  }
+
+  function buildPrices(card, coins) {
+    el('div', 'head', card, tr('Cotações', 'Crypto', 'Cripto'));   // never changes: built once
+    var box = {side: el('div', 'side', card), rows: []};
     for (var j = 0; j < coins.length; j++) {
-      var i = coins[j], row = el('div', 'coin', card);
+      var row = el('div', 'coin', card);
       row.style.top = (86 + 52 * j) + 'px';
-      coin(i, row);
-      el('span', 'n', row, Data.coinName(i));
-      el('span', 'p', row, Data.money(Data.prices[i]));
-      var ch = Data.changes[i];
-      if (!isNaN(ch)) el('span', 'c ' + (ch >= 0 ? 'up' : 'down'), row, Data.change(ch));
+      coin(coins[j], row);
+      box.rows.push({n: el('span', 'n', row), p: el('span', 'p', row), c: el('span', 'c', row)});
+    }
+    return box;
+  }
+
+  function updatePrices(box, coins) {
+    setText(box.side, Data.staleness(Data.pricesAt, 5 * 60000) || tr('variação em 24 h', '24h change', 'variación en 24 h'));
+    for (var j = 0; j < coins.length; j++) {
+      var i = coins[j], r = box.rows[j], ch = Data.changes[i], known = !isNaN(ch);
+      setText(r.n, Data.coinName(i));
+      setText(r.p, Data.money(Data.prices[i]));
+      setText(r.c, known ? Data.change(ch) : '');
+      setClass(r.c, 'up', known && ch >= 0);
+      setClass(r.c, 'down', known && ch < 0);
     }
   }
 
@@ -455,8 +716,16 @@
 
   // MARK: - All Apps
 
+  var appsSig = '';
+
   function renderApps() {
     var sheet = $('apps');
+    // The grid is kept between openings: rebuilding it re-created every icon and
+    // label, which showed as a flash while the sheet was fading in.
+    var sig = I18N.lang + '|';
+    for (var a = 0; a < others.length; a++) sig += others[a].id + '|';
+    if (sig === appsSig) return;
+    appsSig = sig;
     sheet.firstChild.textContent = tr('Todos os Apps', 'All Apps', 'Todas las apps');
     var grid = sheet.lastChild;
     grid.innerHTML = '';
@@ -521,29 +790,55 @@
     Prefs.set(name, values[(i + (d || 1) + values.length) % values.length]);
   }
 
-  var rowsNow = [];
+  var rowsNow = [], settingsBuild = null;
 
   function renderSettings() {
     var box = $('settings').firstChild;
+    var rows = settingRows();
+    rowsNow = rows;
+    // Built once, then only the labels, the values and the toggles change: wiping
+    // and rebuilding the sheet re-created its title icon on every key press.
+    if (!settingsBuild || settingsBuild.rows.length !== rows.length) buildSettings(box, rows);
+    setText(settingsBuild.title, tr('Ajustes do Início', 'Home Settings', 'Ajustes de inicio'));
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], e = settingsBuild.rows[i];
+      setText(e.label, r.label);
+      setClass(e.row, 'dim', !!r.dim);
+      if (e.toggle) setClass(e.toggle, 'on', !!r.toggle);
+      else setText(e.vtext, r.value === undefined ? '' : String(r.value));
+    }
+    updateFocus();
+  }
+
+  function buildSettings(box, rows) {
     box.innerHTML = '';
     var title = el('div', 'title', box);
     sym('settings', title);
-    title.appendChild(document.createTextNode(tr('Ajustes do Início', 'Home Settings', 'Ajustes de inicio')));
+    var titleText = document.createTextNode('');
+    title.appendChild(titleText);
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
-    rowsNow = settingRows();
-    list.style.height = Math.min(rowsNow.length, 7) * 78 + 'px';
-    for (var i = 0; i < rowsNow.length; i++) {
-      var r = rowsNow[i], row = el('div', 'row' + (r.dim ? ' dim' : ''), holder, r.label);
-      if (r.toggle !== undefined) setClass(el('div', 'toggle', row), 'on', r.toggle);
+    list.style.height = Math.min(rows.length, 7) * 78 + 'px';
+    var built = {title: titleText, rows: []};
+    for (var i = 0; i < rows.length; i++) {
+      var row = el('div', 'row', holder), entry = {row: row, vtext: null, toggle: null};
+      entry.label = document.createTextNode('');
+      row.appendChild(entry.label);
+      if (rows[i].toggle !== undefined) entry.toggle = el('div', 'toggle', row);
       else {
-        var v = el('span', 'value', row);
-        if (r.value === '›') v.textContent = '›';
-        else { el('span', 'chev', v, '‹'); v.appendChild(document.createTextNode(r.value)); el('span', 'chev', v, '›'); }
+        var value = el('span', 'value', row);
+        entry.vtext = document.createTextNode('');
+        if (rows[i].value === '›') { entry.vtext.textContent = '›'; value.appendChild(entry.vtext); }
+        else {
+          el('span', 'chev', value, '‹');
+          value.appendChild(entry.vtext);
+          el('span', 'chev', value, '›');
+        }
       }
       hover(row, Z.SETTINGS, i);
+      built.rows.push(entry);
     }
     el('div', 'hint', box, tr('OK ou as setas mudam o valor.', 'OK or the arrows change the value.', 'OK o las flechas cambian el valor.'));
-    updateFocus();
+    settingsBuild = built;
   }
 
   function openSettings() {
@@ -573,21 +868,42 @@
     })};
   }
 
+  var editBuild = null;
+
   function renderShelfEdit() {
     var box = $('shelfedit').firstChild, e = editList();
+    // Same in-place treatment as the settings sheet: the rows are built once.
+    if (!editBuild || editBuild.rows.length !== e.rows.length) buildShelfEdit(box, e.rows);
+    setText(editBuild.title, tr('Prateleira', 'Shelf', 'Estante'));
+    for (var i = 0; i < e.rows.length; i++) {
+      var a = e.rows[i], at = e.ids.indexOf(a.id), b = editBuild.rows[i];
+      setText(b.label, a.title);
+      setText(b.vtext, at >= 0 ? tr('Na prateleira · ', 'On · ', 'En el estante · ') + ordinal(at + 1) : tr('Fora', 'Off', 'Fuera'));
+    }
+    updateFocus();
+  }
+
+  function buildShelfEdit(box, rows) {
     box.innerHTML = '';
     var title = el('div', 'title', box);
     sym('apps', title);
-    title.appendChild(document.createTextNode(tr('Prateleira', 'Shelf', 'Estante')));
+    var titleText = document.createTextNode('');
+    title.appendChild(titleText);
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
-    list.style.height = Math.min(e.rows.length, 7) * 78 + 'px';
-    for (var i = 0; i < e.rows.length; i++) {
-      var a = e.rows[i], at = e.ids.indexOf(a.id), row = el('div', 'row', holder, a.title);
-      el('span', 'value', row, at >= 0 ? tr('Na prateleira · ', 'On · ', 'En el estante · ') + ordinal(at + 1) : tr('Fora', 'Off', 'Fuera'));
+    list.style.height = Math.min(rows.length, 7) * 78 + 'px';
+    var built = {title: titleText, rows: []};
+    for (var i = 0; i < rows.length; i++) {
+      var row = el('div', 'row', holder);
+      var label = document.createTextNode('');
+      row.appendChild(label);
+      var value = el('span', 'value', row);
+      var vtext = document.createTextNode('');
+      value.appendChild(vtext);
       hover(row, Z.EDIT, i);
+      built.rows.push({label: label, vtext: vtext});
     }
     el('div', 'hint', box, tr('OK põe ou tira · ← → mudam a ordem', 'OK adds or removes · ← → change the order', 'OK pone o quita · ← → cambian el orden'));
-    updateFocus();
+    editBuild = built;
   }
 
   function openShelfEdit() {
@@ -768,7 +1084,11 @@
   // MARK: - Night, clock, screensaver
 
   function checkNight() {
-    setClass(body, 'night', Data.isNight(Date.now()));
+    var night = Data.isNight(Date.now());
+    setClass(body, 'night', night);
+    // The page behind the stage (seen for the moment between load and the reveal)
+    // follows the same theme: the light background was the first white flash.
+    setClass(document.documentElement, 'night', night);
   }
 
   var saverOn = false, idleAt = Date.now(), saverIndex = 0, saverTimer = 0, SAVER_AFTER = 5 * 60000;
@@ -789,32 +1109,51 @@
       if (!saverOn) return;
       var p = photos.length ? photos[saverIndex++ % photos.length] : null;
       var back = front === a ? b : a;
-      if (p) {
-        back.style.backgroundImage = 'url(' + Data.image(p.backdrop, 'original') + ')';
-        back.style.webkitTransform = back.style.transform = 'scale(1.0)';
-        clock.lastChild.textContent = p.title;
-        setTimeout(function () {
-          setClass(back, 'on', true);
-          setClass(front, 'on', false);
-          back.style.webkitTransform = back.style.transform = 'scale(1.08) translateX(-1.5%)';
-          front = back;
-        }, 60);
-      }
       tickSaverClock(clock);
+      if (p) {
+        // w1280 instead of the original file: on a 1080p panel the original is
+        // several MB and took seconds to decode, holding the whole layer empty.
+        var url = Data.image(p.backdrop, 'w1280');
+        preloadImages([url], function () {
+          if (!saverOn || front === back) return;
+          back.style.backgroundImage = 'url(' + url + ')';
+          clock.lastChild.textContent = p.title;
+          // One frame with the photo in place before the crossfade starts, so the
+          // fade never runs against an empty layer.
+          afterPaint(function () {
+            if (!saverOn || front === back) return;
+            var previous = front;
+            setClass(back, 'on', true);                  // new photo fades in on top
+            front = back;
+            // The old one is only hidden once the new one is fully opaque: fading
+            // both at once made the screen visibly darker in the middle.
+            setTimeout(function () {
+              if (back === front) setClass(previous, 'on', false);
+            }, 1600);
+          });
+        }, 8000);
+      }
       saverTimer = setTimeout(next, 12000);
     }
-    setClass(s, 'on', true);
-    next();
+    // The saver is revealed only once its first photo is decoded; shown before,
+    // the layer was empty and the TV stayed black while the file downloaded.
+    preloadImages(photos.length ? [Data.image(photos[0].backdrop, 'w1280')] : [], function () {
+      if (!saverOn) return;
+      setClass(s, 'on', true);
+      next();
+    }, 6000);
   }
 
   function tickSaverClock(clock) {
     var d = new Date();
-    clock.firstChild.textContent = Data.time(d.getTime()).replace(/ (AM|PM)$/, '');
+    setText(clock.firstChild, Data.time(d.getTime()).replace(/ (AM|PM)$/, ''));
+    var date;
     try {
-      clock.children[1].textContent = d.toLocaleDateString(I18N.locale(), {weekday: 'long', day: 'numeric', month: 'long'});
+      date = d.toLocaleDateString(I18N.locale(), {weekday: 'long', day: 'numeric', month: 'long'});
     } catch (e) {
-      clock.children[1].textContent = d.toDateString();
+      date = d.toDateString();
     }
+    setText(clock.children[1], date);
   }
 
   function hideSaver() {
@@ -849,16 +1188,23 @@
 
   var revealed = false;
 
-  // Reveal the home only once the shelf and the picks are painted: it used to
-  // appear in stages (empty -> shelf -> cards), which reads as a flash on a TV.
+  // The home is revealed whole: the shelf painted, and the picks either painted or
+  // known to be none. Revealing as soon as the shelf was up showed the picks a
+  // moment later — the staged appearance that reads as a flash on a TV.
   function revealWhenPainted() {
     if (revealed) return;
-    var tiles = $('tiles'), cardsEl = $('cards');
-    var painted = tiles && tiles.children.length > 0 &&
-                  (body.classList.contains('no-picks') || (cardsEl && cardsEl.children.length > 0));
-    if (!painted) return;
+    var tiles = $('tiles');
+    if (!tiles || !tiles.children.length) return;
+    if (!hasClass(body, 'cards-ready') && !hasClass(body, 'no-picks')) return;
+    markReady();
+  }
+
+  function markReady() {
+    if (revealed) return;
     revealed = true;
     setClass(body, 'ready', true);
+    // One more painted frame, and the transitions are back for the rest of the run.
+    afterPaint(function () { setClass(body, 'no-anim', false); });
   }
 
   // Developer Mode reminder. LG's session lasts 1000 hours; this TV's token file
@@ -886,7 +1232,7 @@
       text = 'Developer Mode expira em ' + days + ' dias';
       warn = true;
     }
-    box.textContent = text;
+    setText(box, text);   // the pill is redrawn only when its days change
     setClass(box, 'on', !!text);
     setClass(box, 'warn', warn);
     setClass(box, 'crit', crit);
@@ -938,10 +1284,7 @@
   });
 
   // Safety net: never leave the screen hidden if the data never arrives.
-  setTimeout(function () {
-    revealed = true;
-    setClass(body, 'ready', true);
-  }, 2500);
+  setTimeout(markReady, 2500);
 
   function reopened() {
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
@@ -961,10 +1304,18 @@
 
   I18N.set(Prefs.language());
   fit();
+  // Day or night right away: the home is still invisible, and the page behind it
+  // must already be the right colour (a night start used to flash the light one).
+  checkNight();
   renderTop();
   loadApps(function () {
-    renderAll();
-    Data.refresh();
+    // Icons are file:// files and the symbols are mask images: both still paint a
+    // frame after their decode. Loading them first keeps every tile and button
+    // complete on the very first painted frame.
+    preloadImages(iconUrls().concat(symbolUrls()), function () {
+      renderAll();
+      Data.refresh();
+    }, 2000);
   });
   setInterval(function () {
     renderClock();

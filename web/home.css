@@ -479,8 +479,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 #saver { background: #000; opacity: 0; visibility: hidden; -webkit-transition: opacity 1.2s, visibility 0s 1.2s; transition: opacity 1.2s, visibility 0s 1.2s; }
 #saver.on { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
-#saver .photo { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background-size: cover; background-position: center; opacity: 0; -webkit-transition: opacity 2.4s, -webkit-transform 24s linear; transition: opacity 2.4s, transform 24s linear; }
-#saver .photo.on { opacity: 1; }
+/* Opacity only: animating a 1920x1080 transform for 24 s made this GPU re-rasterise the
+   whole layer and flash black between photos. The new photo is stacked on top and
+   faded in, so the screen never goes darker than either photo. */
+#saver .photo { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background-size: cover; background-position: center; opacity: 0; z-index: 1; -webkit-transition: opacity 1.4s ease; transition: opacity 1.4s ease; }
+#saver .photo.on { opacity: 1; z-index: 2; }
 #saver .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 520px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55)); }
 #saver .clock {
   position: absolute;
@@ -563,3 +566,36 @@ body.ready #stage { opacity: 1; }
 }
 
 .night #devmode.crit { color: #FF6961; }
+
+/* The picks fade in once their posters are decoded (home.js sets .cards-ready).
+   Before that they are invisible instead of empty, so a cold start shows the
+   shelf at once — no black screen waiting for the images, no empty card boxes. */
+#cards { opacity: 0; -webkit-transition: opacity .22s ease; transition: opacity .22s ease; }
+body.cards-ready #cards { opacity: 1; }
+
+/* The photos now stack above each other (z-index 1/2) to crossfade without going
+   dark, so the shade, the clock and the title need a level above both. */
+#saver .shade { z-index: 3; }
+#saver .clock { z-index: 4; }
+
+/* The first painted frame: no transitions anywhere. home.js sets this class while
+   the home is still invisible, so it is revealed with the theme it already has —
+   without it the day/night colours transitioned from the other theme and a night
+   start showed a white screen for a second or two. Taken off after the reveal. */
+body.no-anim, body.no-anim * { -webkit-transition: none !important; transition: none !important; }
+
+/* The clock and the picks take each other's place: the clock fades in and out
+   instead of appearing or vanishing in a single frame. */
+#clock {
+  display: block;
+  opacity: 0;
+  visibility: hidden;
+  -webkit-transition: opacity .3s, visibility 0s .3s;
+  transition: opacity .3s, visibility 0s .3s;
+}
+.no-picks #clock { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
+
+/* The page behind the stage (the moment between load and the reveal) follows the
+   theme too: its fixed light background was the white frame of a night start. */
+html.night, body.night { background: #0B0B0D; }
+

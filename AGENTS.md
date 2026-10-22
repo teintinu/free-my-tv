@@ -24,8 +24,7 @@ Esta seção vale para este fork. Ela não substitui o CLAUDE.md: acrescenta as 
 
 ### Nunca deixe a tela da TV piscar (flicker)
 
-O alvo real é uma TV LG com **webOS 4.x / Chromium 53**. Piscada nesse motor é o defeito mais visível e o mais
-fácil de introduzir sem perceber. Regras:
+O alvo real é uma TV LG com **webOS 4.x / Chromium 53**. Piscada nesse motor é o defeito mais visível e o mais fácil de introduzir sem perceber. Regras:
 
 - **Nunca** faça `innerHTML = ''` seguido de reconstrução num container que está visível. Atualize no lugar
   (`textContent` de cada nó) ou compare os dados antes e saia cedo (`if (same) return;`).
@@ -35,6 +34,18 @@ fácil de introduzir sem perceber. Regras:
 - **Volta do app ao primeiro plano** não pode remontar a prateleira: guarde uma assinatura da lista de apps
   (`shelfSig`) e pule o render quando nada mudou.
 - **Imagens**: troque a imagem de um nó que já existe; não recrie o card inteiro para trocar um pôster.
+- **Imagem só entra depois de pronta**: junte as URLs da view que vai entrar, pré-carregue e **force o decode**
+  (o Chromium 53 não tem `img.decode()`: desenhe a imagem num canvas 1×1), e só então troque o DOM — em dois
+  `requestAnimationFrame`, nunca no mesmo frame do preload. Medido no home: o flash de cartazes caiu de 98 % por
+  0,5 s para um único quadro antes do paint.
+- **Caso de tela cheia (protetor)**: empilhe a foto nova **por cima** e desça a antiga só depois que o fade
+  terminar — crossfade com as duas apagando ao mesmo tempo escurece no meio. E não anime `transform` de uma
+  camada 1920×1080 por 24 s: a GPU re-rasteriza e pisca preto (medido: luminância caía de 140 para 5; com só
+  opacidade, o mínimo ficou em 67).
+- **Ao empilhar camadas, revise o `z-index` do resto** (`#saver .shade` e `#saver .clock` precisaram ir para
+  3 e 4 quando as fotos passaram a usar 1 e 2, senão o relógio some atrás da foto).
+- **Caso a imagem case com o slot**: pôster de 320 px pede `w300`, não `w780` (6× os bytes e vários segundos de
+  espera numa TV). Menos bytes = primeiro quadro mais rápido.
 - **Animação só de `transform`/`opacity`**, nunca `width`, `height`, `top`, `left`, `filter` ou `box-shadow`
   em laço — o Chromium 53 não tem `backdrop-filter`, `grid` nem variáveis CSS.
 - **Não injete CSS no meio de um seletor.** Regras novas vão no **fim** de `web/home.css` (quebrar o topo do
