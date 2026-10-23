@@ -1204,7 +1204,9 @@
     revealed = true;
     setClass(body, 'ready', true);
     // One more painted frame, and the transitions are back for the rest of the run.
+    // The timer is the fallback: while the TV is still starting, frames can be late.
     afterPaint(function () { setClass(body, 'no-anim', false); });
+    setTimeout(function () { setClass(body, 'no-anim', false); }, 1500);
   }
 
   // Developer Mode reminder. LG's session lasts 1000 hours; this TV's token file
