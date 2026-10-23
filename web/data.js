@@ -2,7 +2,10 @@
  * What the home screen shows, kept in localStorage so it opens with numbers:
  *  - the picks: what's trending this week and recent releases, only from the streaming apps on this TV (TMDB, with
  *    the person's own free key from config.properties), three per hour;
- *  - weather, sunrise and sunset (Open-Meteo, every 30 min) and optional crypto prices (Binance, every 5 min).
+ *  - the weather, sunrise and sunset (Open-Meteo, every 30 min) and the tide (the Tábua das Marés through the
+ *    association's endpoint when there is a key, Open-Meteo Marine when there is not, every 30 min), with the
+ *    day's curve, its highs and lows and the window the beach is low enough for a buggy;
+ *  - the moon: its phase, the lit part and the hour it rises (computed here, no network).
  * Settings changed on the TV (Prefs) win over config.properties, as on Android. Built without a city (--generic), the
  * TV's time zone gives the city, and its country the currency and the region (zones.js).
  */
@@ -10,7 +13,6 @@ var CONFIG = window.CONFIG || {};
 
 var Place = (function () {
   'use strict';
-  var EURO = /^(AT|BE|CY|DE|EE|ES|FI|FR|GR|HR|IE|IT|LT|LU|LV|MT|NL|PT|SI|SK)$/;
 
   /** A time zone's main city: {country, lat, lon, name}, or null. */
   function zone(name) {
@@ -24,11 +26,10 @@ var Place = (function () {
   var tz = zone(TV.zone()), set = CONFIG.latitude !== '' && CONFIG.latitude !== undefined;
   var country = (CONFIG.tmdbRegion || (tz ? tz.country : '') || 'US').toUpperCase();
   return {
-    lat: set ? CONFIG.latitude : tz ? tz.lat : '40.7128',
-    lon: set ? CONFIG.longitude : tz ? tz.lon : '-74.0060',
+    lat: set ? CONFIG.latitude : tz ? tz.lat : '-4.1818',
+    lon: set ? CONFIG.longitude : tz ? tz.lon : '-38.0801',
     city: CONFIG.city || (!set && tz ? tz.name : ''),
     country: country,
-    currency: (CONFIG.currency || (country === 'BR' ? 'BRL' : EURO.test(country) ? 'EUR' : 'USD')).toUpperCase(),
     /** Fahrenheit for TVs in the US (by their time zone, or their language when it doesn't tell). */
     fahrenheit: tz ? tz.country === 'US' : /-US$/i.test(navigator.language || '')
   };
@@ -47,15 +48,16 @@ var Prefs = (function () {
     temperature: function () { return pick('temperature', CONFIG.temperature || 'auto'); },
     theme: function () { return pick('theme', 'auto'); },
     weather: function () { return pick('weather', true); },
-    quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
-    coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
+    /** The tide and the moon take the corner where the prices used to be. */
+    tide: function () { return pick('tide', CONFIG.tideWidget !== false); },
+    /** The level above which the beach is no place for a buggy (metres, in the tide table's own datum). */
+    beachLevel: function () {
+      var v = pick('beachLevel', null);
+      if (v !== null && !isNaN(v)) return +v;
+      return CONFIG.tideLevel !== undefined && CONFIG.tideLevel !== '' && !isNaN(CONFIG.tideLevel) ? +CONFIG.tideLevel : 0.3;
+    },
     shelf: function () { return pick('shelf', null); },
-    set: function (name, value) { v[name] = value; save(); this.version++; },
-    setCoin: function (i, on) {
-      var c = (pick('coins', null) || [true, true, true, true]).slice();
-      c[i] = on;
-      this.set('coins', c);
-    }
+    set: function (name, value) { v[name] = value; save(); this.version++; }
   };
 })();
 
@@ -137,73 +139,287 @@ var Data = (function () {
     });
   }
 
-  // MARK: - Prices
+  // MARK: - Tide and moon
+  //
+  // The tide comes from the same table the association's buggy dashboard uses (the Tábua das Marés, through its
+  // /api/passeio, which answers CORS and takes the key from config.properties). Without a key it comes from
+  // Open-Meteo Marine, which needs none. Everything else here — the day's curve, the exact highs and lows, the
+  // window when the beach is low enough for a buggy, and the moon — is computed in this file, so the screen keeps
+  // working from the cache when the network is down.
 
-  var COINS = ['BTC', 'ETH', 'SOL', 'USDT'];
-  var CURRENCY = Place.currency;
-  var QUOTE = CURRENCY === 'USD' ? 'USDT' : CURRENCY;
-  /** Binance refuses the whole request when it has no pairs in the currency (INR...): the prices go in dollars then. */
-  function inDollars() {
-    store('dollarsFor', CURRENCY);
-    CURRENCY = 'USD';
-    QUOTE = 'USDT';
-  }
-  if (stored('dollarsFor') === CURRENCY && CURRENCY !== 'USD') {
-    CURRENCY = 'USD';
-    QUOTE = 'USDT';
-  }
-  var prices = [NaN, NaN, NaN, NaN], changes = [NaN, NaN, NaN, NaN], pricesAt = 0, fetchingPrices = false;
+  var TIDE_URL = (CONFIG.tideUrl || 'https://associacao.teintinu.com/api/passeio').trim();
+  var TIDE_KEY = (CONFIG.tideApiKey || '').trim();
+  var TIDE_LAT = CONFIG.tideLat === undefined || CONFIG.tideLat === '' ? Place.lat : String(CONFIG.tideLat);
+  var TIDE_LON = CONFIG.tideLon === undefined || CONFIG.tideLon === '' ? Place.lon : String(CONFIG.tideLon);
+  var TIDE_AT = TIDE_LAT + ',' + TIDE_LON;
+  var STEP = 10 * 60000;                 // the curve is kept at 10-minute steps
+  var TIDE_EVERY = 30 * 60000;           // the table does not change faster than that
+  var TIDE_RETRY = 10 * 60000;           // after a failure, wait before asking again
 
-  /** Indexes in COINS of the coins that are on (the dollar only in Brazilian reais, where Binance lists it). */
-  function activeCoins() {
-    var out = [];
-    if (!Prefs.quotes()) return out;
-    for (var i = 0; i < COINS.length; i++) if (Prefs.coin(i) && (i < 3 || CURRENCY === 'BRL')) out.push(i);
+  var tide = null, tideAt = 0, fetchingTide = false, tideFailedAt = 0, tideError = '';
+  var RAD = Math.PI / 180;
+
+  function sinR(deg) { return Math.sin(deg * RAD); }
+  function cosR(deg) { return Math.cos(deg * RAD); }
+
+  /** Level at `t` from the 10-minute curve (linear: the steps are short enough for a beach decision). */
+  function levelAt(t) {
+    var s = tide && tide.points;
+    if (!s || !s.length) return NaN;
+    if (t <= s[0][0]) return s[0][1];
+    if (t >= s[s.length - 1][0]) return s[s.length - 1][1];
+    var lo = 0, hi = s.length - 1;
+    while (hi - lo > 1) {
+      var mid = (lo + hi) >> 1;
+      if (s[mid][0] <= t) lo = mid; else hi = mid;
+    }
+    var a = s[lo], b = s[hi], span = b[0] - a[0];
+    return span > 0 ? a[1] + (b[1] - a[1]) * (t - a[0]) / span : a[1];
+  }
+
+  function catmull(p0, p1, p2, p3, u) {
+    var u2 = u * u, u3 = u2 * u;
+    return 0.5 * ((2 * p1) + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3);
+  }
+
+  /** The hourly samples of Open-Meteo as a smooth 10-minute curve (the table's are already 15 minutes apart). */
+  function smooth(points) {
+    if (points.length < 2) return points.slice();
+    var out = [], i, j;
+    for (i = 0; i < points.length - 1; i++) {
+      var p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(points.length - 1, i + 2)];
+      var span = p2[0] - p1[0];
+      if (span <= 0) continue;
+      var steps = Math.max(1, Math.round(span / STEP));
+      for (j = 0; j < steps; j++) {
+        var u = j / steps;
+        out.push([p1[0] + span * u, catmull(p0[1], p1[1], p2[1], p3[1], u)]);
+      }
+    }
+    out.push(points[points.length - 1]);
     return out;
   }
 
-  function parsePrices(list) {
-    var found = 0;
-    for (var i = 0; list && i < list.length; i++) {
-      for (var k = 0; k < COINS.length; k++) {
-        if (list[i].symbol !== COINS[k] + QUOTE) continue;
-        found++;
-        var last = parseFloat(list[i].lastPrice), open = parseFloat(list[i].openPrice);
-        prices[k] = last;
-        changes[k] = open > 0 ? (last - open) / open * 100 : NaN;
+  /** Highs and lows of hourly samples, each one refined by a parabola (the peak is rarely on the hour). */
+  function tideExtremes(points) {
+    var out = [];
+    for (var i = 1; i + 1 < points.length; i++) {
+      var a = points[i - 1][1], b = points[i][1], c = points[i + 1][1];
+      if (!((b > a && b >= c) || (b < a && b <= c))) continue;
+      var curvature = a - 2 * b + c;
+      var off = curvature ? 0.5 * (a - c) / curvature : 0;
+      var peak = b - 0.25 * (a - c) * off;
+      out.push([points[i][0] + off * (points[i + 1][0] - points[i][0]), peak, b > a ? 'max' : 'min']);
+    }
+    return out;
+  }
+
+  function byTime(a, b) { return a[0] - b[0]; }
+
+  /** /api/passeio's answer: 15-minute points and the table's exact highs and lows. */
+  function tabuaTide(o) {
+    var days = o.days || [], points = [], extremes = [];
+    for (var i = 0; i < days.length; i++) {
+      var t = days[i].tide;
+      if (!t) continue;
+      var hourly = t.hourly || [], ext = t.extremes || [];
+      for (var h = 0; h < hourly.length; h++) {
+        var at = Date.parse(hourly[h].time);
+        if (!isNaN(at) && isFinite(hourly[h].level)) points.push([at, +hourly[h].level]);
+      }
+      for (var e = 0; e < ext.length; e++) {
+        var et = typeof ext[e].ts === 'number' ? ext[e].ts : Date.parse(ext[e].time);
+        if (!isNaN(et) && (ext[e].kind === 'max' || ext[e].kind === 'min')) extremes.push([et, +ext[e].level, ext[e].kind]);
       }
     }
-    return found;
+    points.sort(byTime);
+    extremes.sort(byTime);
+    return {
+      points: points, extremes: extremes, source: 'tabua',
+      label: o.tideSourceLabel || '', place: o.place && o.place.city ? o.place.city : ''
+    };
+  }
+
+  /** Open-Meteo Marine: hourly heights above mean sea level (no key, no table). */
+  function marineTide(o) {
+    var h = o.hourly || {}, time = h.time || [], level = h.sea_level_height_msl || [], off = o.utc_offset_seconds || 0, points = [];
+    for (var i = 0; i < time.length && i < level.length; i++) {
+      if (level[i] === null || level[i] === undefined) continue;
+      points.push([localTime(time[i], off), +level[i]]);
+    }
+    points.sort(byTime);
+    return {points: points, extremes: tideExtremes(points), source: 'open-meteo', label: 'Open-Meteo Marine', place: ''};
+  }
+
+  function buildTide(raw) {
+    return {
+      points: smooth(raw.points), extremes: raw.extremes, source: raw.source, label: raw.label, place: raw.place
+    };
   }
 
   (function () {
-    var p = stored('prices');
-    if (p && p.quote === QUOTE && parsePrices(p.body)) pricesAt = p.at;
+    var c = stored('tide');
+    if (c && c.place === TIDE_AT && c.data && c.data.points && c.data.points.length) {
+      tide = buildTide(c.data);
+      tideAt = c.at || 0;
+    }
   })();
 
-  function refreshPrices() {
-    var coins = activeCoins(), now = Date.now();
-    if (!coins.length || fetchingPrices || (now - pricesAt < 5 * 60000 && now >= pricesAt)) return;
-    fetchingPrices = true;
-    var symbols = coins.map(function (i) { return '%22' + COINS[i] + QUOTE + '%22'; }).join(',');
-    var path = '/api/v3/ticker/24hr?type=MINI&symbols=%5B' + symbols + '%5D';
-    // Binance.com refuses the US (HTTP 451); Binance.US answers the same call in dollars.
-    var hosts = ['https://api.binance.com', 'https://api.binance.us'];
-    (function next(h) {
-      get(hosts[h] + path, {}, function (err, body) {
-        // A pair Binance doesn't list (HTTP 400): the prices go in dollars.
-        if (err && err.message === 'HTTP 400' && QUOTE !== 'USDT') { fetchingPrices = false; inDollars(); refreshPrices(); return; }
-        if (err || !parsePrices(body)) {
-          if (h + 1 < hosts.length && !(err && err.message === 'HTTP 400')) next(h + 1);
-          else fetchingPrices = false;
-          return;
-        }
-        fetchingPrices = false;
-        pricesAt = Date.now();
-        store('prices', {quote: QUOTE, body: body, at: pricesAt});
-        changed();
+  function refreshTides() {
+    var now = Date.now();
+    if (fetchingTide || (now - tideAt < TIDE_EVERY && now >= tideAt)) return;
+    if (tideFailedAt && now - tideFailedAt < TIDE_RETRY && now >= tideFailedAt) return;
+    fetchingTide = true;
+    function done(err, raw) {
+      fetchingTide = false;
+      if (err || !raw || !raw.points.length) {
+        tideFailedAt = Date.now();
+        tideError = err ? err.message : 'no tide data';
+        return;
+      }
+      tideError = '';
+      tideFailedAt = 0;
+      tide = buildTide(raw);
+      tideAt = Date.now();
+      store('tide', {place: TIDE_AT, data: raw, at: tideAt});
+      changed();
+    }
+    // With a key the association answers with the Tábua's own highs and lows (the numbers the family knows);
+    // without one, or where the table does not cover, Open-Meteo's model needs nothing.
+    if (TIDE_KEY) {
+      get(TIDE_URL + '?lat=' + TIDE_LAT + '&lon=' + TIDE_LON + '&days=3', {'x-api-key': TIDE_KEY}, function (err, body) {
+        if (err) { done(err); return; }
+        done(null, tabuaTide(body));
       });
-    })(0);
+      return;
+    }
+    get('https://marine-api.open-meteo.com/v1/marine?latitude=' + TIDE_LAT + '&longitude=' + TIDE_LON
+        + '&hourly=sea_level_height_msl&timezone=auto&forecast_days=4', {}, function (err, body) {
+      if (err) { done(err); return; }
+      done(null, marineTide(body));
+    });
+  }
+
+  /** The high or low after `now`, or null. */
+  function nextExtreme(now) {
+    for (var i = 0; tide && i < tide.extremes.length; i++) if (tide.extremes[i][0] > now) {
+      return {t: tide.extremes[i][0], level: tide.extremes[i][1], kind: tide.extremes[i][2]};
+    }
+    return null;
+  }
+
+  /** Today's highs and lows (up to 4: two cycles). */
+  function extremesToday(now) {
+    var d = new Date(now), start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), end = start + 86400000, out = [];
+    for (var i = 0; tide && i < tide.extremes.length; i++) {
+      var e = tide.extremes[i];
+      if (e[0] >= start && e[0] < end) out.push({t: e[0], level: e[1], kind: e[2]});
+    }
+    return out.slice(0, 4);
+  }
+
+  /** Where the curve crosses `level` between two instants: [{t, up}]. */
+  function crossings(level, from, to) {
+    var s = tide && tide.points, out = [];
+    if (!s || s.length < 2) return out;
+    var start = Math.max(from, s[0][0]), end = Math.min(to, s[s.length - 1][0]);
+    if (end <= start) return out;
+    var t = start, prev = levelAt(start) - level;
+    while (t < end) {
+      var next = Math.min(t + 15 * 60000, end), d = levelAt(next) - level;
+      if ((prev < 0 && d >= 0) || (prev > 0 && d <= 0)) {
+        var lo = t, hi = next;
+        for (var i = 0; i < 6; i++) {
+          var mid = (lo + hi) / 2;
+          if ((levelAt(mid) - level) * prev > 0) lo = mid; else hi = mid;
+        }
+        out.push({t: Math.round((lo + hi) / 2), up: d > prev});
+      }
+      prev = d;
+      t = next;
+    }
+    return out;
+  }
+
+  /**
+   * The beach door, for a buggy: the stretch where the water is below `level`.
+   * in: the beach is open now and closes at `close`; out: it opens again at `open`;
+   * always/never: the level does not cross all day; unknown: no tide data.
+   */
+  function beach(level, now) {
+    if (!tide || !tide.points.length || isNaN(level)) return {state: 'unknown'};
+    var inside = levelAt(now) < level;
+    var list = crossings(level, now - 30 * 3600000, now + 36 * 3600000);
+    var next = null;
+    for (var i = 0; i < list.length; i++) if (list[i].t > now) { next = list[i]; break; }
+    if (!next) return {state: inside ? 'always' : 'never'};
+    return inside ? {state: 'in', close: next.t} : {state: 'out', open: next.t};
+  }
+
+  // MARK: - The moon
+  //
+  // Low-precision lunar and solar positions (a few tenths of a degree): enough for the phase, the lit part and
+  // the hour the moon comes up, and no libraries on a TV from 2016.
+
+  function sunLongitude(jd) {
+    var n = jd - 2451545.0, g = 357.528 + 0.9856003 * n;
+    return 280.460 + 0.9856474 * n + 1.915 * sinR(g) + 0.020 * sinR(2 * g);
+  }
+
+  /** The moon's ecliptic longitude and latitude, in degrees. */
+  function moonEcliptic(jd) {
+    var n = jd - 2451545.0;
+    var L = 218.316 + 13.176396 * n, M = 134.963 + 13.064993 * n;
+    var D = 297.850 + 12.190749 * n, Ms = 357.529 + 0.98560028 * n, F = 93.272 + 13.229350 * n;
+    var lon = L + 6.289 * sinR(M) - 1.274 * sinR(M - 2 * D) + 0.658 * sinR(2 * D) + 0.214 * sinR(2 * M) - 0.186 * sinR(Ms) - 0.114 * sinR(2 * F);
+    return {lon: lon, lat: 5.128 * sinR(F)};
+  }
+
+  /** The moon's height above the horizon for a place, in degrees. */
+  function moonAltitude(ms, lat, lon) {
+    var jd = ms / 86400000 + 2440587.5, ecl = moonEcliptic(jd);
+    var eps = 23.439 - 0.0000004 * (jd - 2451545.0);
+    var latR = ecl.lat * RAD;
+    var ra = Math.atan2(sinR(ecl.lon) * cosR(eps) - Math.tan(latR) * sinR(eps), cosR(ecl.lon)) / RAD;
+    var dec = Math.asin(sinR(ecl.lat) * cosR(eps) + cosR(ecl.lat) * sinR(eps) * sinR(ecl.lon)) / RAD;
+    var gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0);
+    var hour = ((gmst + lon - ra) % 360 + 360) % 360;
+    return Math.asin(sinR(lat) * sinR(dec) + cosR(lat) * cosR(dec) * cosR(hour)) / RAD;
+  }
+
+  /** When the moon rises and sets on this day, and whether it is up now. */
+  function moonTimes(now, lat, lon) {
+    var d = new Date(now), start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    var rise = 0, set = 0, prevT = start, prevA = moonAltitude(start, lat, lon);
+    for (var t = start + 15 * 60000; t <= start + 86400000; t += 15 * 60000) {
+      var a = moonAltitude(t, lat, lon);
+      if ((prevA < 0 && a >= 0) || (prevA > 0 && a <= 0)) {
+        var lo = prevT, hi = t;
+        for (var i = 0; i < 8; i++) {
+          var mid = (lo + hi) / 2;
+          if ((moonAltitude(mid, lat, lon) > 0) === (prevA > 0)) lo = mid; else hi = mid;
+        }
+        var when = Math.round((lo + hi) / 2);
+        if (a >= 0) { if (!rise) rise = when; } else if (!set) set = when;
+      }
+      prevA = a;
+      prevT = t;
+    }
+    return {rise: rise, set: set, up: moonAltitude(now, lat, lon) > 0};
+  }
+
+  /** 0 = new, 0.25 = first quarter, 0.5 = full, 0.75 = last quarter; and the lit part, 0..1. */
+  function moonInfo(now) {
+    var jd = now / 86400000 + 2440587.5;
+    var elong = ((moonEcliptic(jd).lon - sunLongitude(jd)) % 360 + 360) % 360;
+    var times = moonTimes(now, +Place.lat, +Place.lon);
+    return {
+      phase: elong / 360,
+      illumination: (1 - cosR(elong)) / 2,
+      rise: times.rise || 0,
+      set: times.set || 0,
+      up: times.up
+    };
   }
 
   // MARK: - Picks (TMDB)
@@ -500,23 +716,38 @@ var Data = (function () {
     try { return v.toLocaleString(I18N.locale(), {minimumFractionDigits: digits, maximumFractionDigits: digits}); } catch (e) { return v.toFixed(digits); }
   }
 
-  var SYMBOLS = {USD: '$', BRL: 'R$ ', EUR: '€', GBP: '£', JPY: '¥'};
-
   return {
-    COINS: COINS,
     city: Place.city,
-    currency: CURRENCY,
     onChange: function (fn) { listeners.push(fn); },
     setApps: function (apps) { installed = apps; },
     appFor: appFor,
-    refresh: function () { refreshWeather(); refreshPrices(); refreshRecs(); },
-    settingsChanged: function () { pricesAt = 0; refreshPrices(); changed(); },
+    refresh: function () { refreshWeather(); refreshTides(); refreshRecs(); },
     get weather() { return weather; },
     get weatherAt() { return weatherAt; },
-    prices: prices,
-    changes: changes,
-    get pricesAt() { return pricesAt; },
-    activeCoins: activeCoins,
+
+    // Tide: the table's curve, its highs and lows, and the window when the beach is low enough.
+    tide: function () { return tide; },
+    tideAt: function () { return tideAt; },
+    tideError: function () { return tideError; },
+    tideLabel: function () { return tide ? tide.label : ''; },
+    tidePlace: function () { return tide ? tide.place : ''; },
+    tideSource: function () { return tide ? tide.source : ''; },
+    levelAt: levelAt,
+    beach: beach,
+    nextExtreme: nextExtreme,
+    todayExtremes: extremesToday,
+    /** The curve between two instants, for the day's chart. */
+    curve: function (from, to) {
+      var s = tide && tide.points, out = [];
+      for (var i = 0; s && i < s.length; i++) if (s[i][0] >= from && s[i][0] <= to) out.push({t: s[i][0], level: s[i][1]});
+      return out;
+    },
+    moon: moonInfo,
+    /** A height with one decimal, in the tide table's own datum: "0,8 m". */
+    meters: function (v) { return isNaN(v) ? '—' : fmt(v, 1) + ' m'; },
+    /** The same number without the unit, for a row of them where it is repeated. */
+    height: function (v) { return isNaN(v) ? '—' : fmt(v, 1); },
+
     hasKey: function () { return !!KEY; },
     /** No key at all, or the first picks fetch is over: the home knows whether picks exist. */
     settled: function () { return !KEY || firstDone; },
@@ -536,19 +767,6 @@ var Data = (function () {
       return mins < rise || mins >= set;
     },
 
-    compact: function (v) {
-      if (isNaN(v)) return '—';
-      if (v >= 10000) return fmt(v / 1000, 1) + 'k';
-      if (v >= 1000) return fmt(v / 1000, 2) + 'k';
-      if (v >= 100) return fmt(v, 0);
-      return fmt(v, 2);
-    },
-    money: function (v) {
-      var s = SYMBOLS[CURRENCY] || CURRENCY + ' ';
-      if (isNaN(v)) return s + '—';
-      return s + (v >= 1000 ? fmt(v, 0) : fmt(v, 2));
-    },
-    change: function (v) { return isNaN(v) ? '' : (v >= 0 ? '+' : '−') + fmt(Math.abs(v), 1) + '%'; },
     degrees: function (v) {
       if (v === undefined || v === null || isNaN(v)) return '—';
       var unit = Prefs.temperature();
@@ -595,7 +813,6 @@ var Data = (function () {
       if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snowflake';
       if (code >= 95) return 'thunderstorm';
       return 'rainy';
-    },
-    coinName: function (i) { return i === 3 ? tr('Dólar', 'Dollar', 'Dólar') : ['Bitcoin', 'Ethereum', 'Solana'][i]; }
+    }
   };
 })();

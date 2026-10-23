@@ -1,9 +1,9 @@
 /*
  * The home screen for web-app TVs (LG webOS, Samsung Tizen), with the Android app's design and behavior (HomeView):
  *  - top: the "For You" title and the tabs (Explore, Movies, Shows); icon-only glass buttons at the right (Live TV,
- *    HDMI Inputs, Settings) and the crypto quotes at the end of the tab row;
+ *    HDMI Inputs, Settings) and the moon and the tide at the end of the tab row;
  *  - three picks for this hour in the selected tab; the background is the first one's photo, blurred and almost white;
- *  - the glass shelf with the apps; ↓ opens the drawer (inputs, shortcuts, weather, prices); ↑ or Back closes it;
+ *  - the glass shelf with the apps; ↓ opens the drawer (inputs, shortcuts, weather, tide and moon); ↑ or Back closes it;
  *  - a night look from sunset to sunrise; a screensaver after a few idle minutes.
  * The remote's arrows, OK and Back move the focus; a pointer (LG's Magic Remote) focuses what it points at.
  */
@@ -38,21 +38,6 @@
   /** Writes text only when it changed: an identical write is a DOM mutation and a repaint. */
   function setText(node, text) {
     if (node && node.textContent !== text) node.textContent = text;
-  }
-
-  function coin(i, parent) {
-    var c = window.COINS && window.COINS[i];
-    if (!c) return;
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 32 32');
-    for (var k = 0; k < c.length; k++) {
-      var p = document.createElementNS(ns, 'path');
-      p.setAttribute('d', c[k]);
-      p.setAttribute('fill-rule', 'evenodd');
-      svg.appendChild(p);
-    }
-    parent.appendChild(svg);
   }
 
   function hasClass(e, c) { return (' ' + e.className + ' ').indexOf(' ' + c + ' ') >= 0; }
@@ -175,9 +160,18 @@
 
   // Two frames: the first commits the new DOM, the second paints it with the
   // images already decoded. Swapping inside a single frame is what makes the
-  // empty state visible.
+  // empty state visible. The timer is the way out: a compositor that is not
+  // producing frames (a headless run, a TV still starting) would hold the cards
+  // and the end of the first paint for ever.
   function afterPaint(fn) {
-    requestAnimationFrame(function () { requestAnimationFrame(fn); });
+    var done = false;
+    function run() {
+      if (done) return;
+      done = true;
+      fn();
+    }
+    requestAnimationFrame(function () { requestAnimationFrame(run); });
+    setTimeout(run, 120);
   }
 
   /** Keeps an image decoded so the background canvas can be drawn in the same frame as the swap. */
@@ -266,7 +260,7 @@
     }
     list = $('buttons').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.TOP && st.top === 3 + i);
-    setClass($('quotes'), 'hide', st.zone === Z.TOP && st.top >= 3);
+    setClass($('tideinfo'), 'hide', st.zone === Z.TOP && st.top >= 3);
     list = $('cards').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.CARDS && st.card === i);
     list = $('tiles').children;
@@ -306,7 +300,7 @@
     return (r.left + r.right) / 2;
   }
 
-  // MARK: - Top: title, tabs, buttons, quotes
+  // MARK: - Top: title, tabs, buttons, moon and tide
 
   var TAB_KIND = [null, 'movie', 'tv'];
 
@@ -340,29 +334,112 @@
     }
   }
 
-  function renderQuotes() {
-    var q = $('quotes'), coins = Data.activeCoins();
-    // Same coins as last time? Update the numbers in place. Rebuilding the whole
-    // strip made the top-right corner blink on every price refresh (every 30 s).
-    var rows = q.querySelectorAll('.q');
-    var same = rows.length === coins.length;
-    // data-coin holds the index as a string: comparing it with the number made every
-    // refresh look different, so the strip was rebuilt on every tick after all.
-    for (var r = 0; same && r < rows.length; r++) same = rows[r].getAttribute('data-coin') === String(coins[r]);
-    if (same) {
-      for (var s = 0; s < coins.length; s++) {
-        var value = rows[s].lastElementChild;
-        if (value) setText(value, Data.compact(Data.prices[coins[s]]));
-      }
-      return;
+  // MARK: - The moon and the tide (the corner the prices used to take)
+
+  var MOON_PHASES = [
+    ['Lua nova', 'New Moon', 'Luna nueva'],
+    ['Crescente côncava', 'Waxing Crescent', 'Creciente cóncava'],
+    ['Quarto crescente', 'First Quarter', 'Cuarto creciente'],
+    ['Crescente gibosa', 'Waxing Gibbous', 'Creciente gibosa'],
+    ['Cheia', 'Full Moon', 'Luna llena'],
+    ['Minguante gibosa', 'Waning Gibbous', 'Gibosa menguante'],
+    ['Quarto minguante', 'Last Quarter', 'Cuarto menguante'],
+    ['Minguante côncava', 'Waning Crescent', 'Menguante cóncava']
+  ];
+
+  function moonName(phase) {
+    var p = MOON_PHASES[Math.round(phase * 8) % 8];
+    return tr(p[0], p[1], p[2]);
+  }
+
+  /** The lit part of the moon as an SVG path in the -9..9 box (the waning half is mirrored). */
+  function moonPath(phase, r) {
+    var q = phase <= 0.5 ? phase : 1 - phase;
+    var rx = Math.max(0.05, Math.abs(Math.cos(2 * Math.PI * q)) * r);
+    return 'M0,' + (-r) + 'A' + r + ',' + r + ' 0 0 1 0,' + r +
+      'A' + rx + ',' + r + ' 0 0 ' + (q < 0.25 ? 0 : 1) + ' 0,' + (-r) + 'Z';
+  }
+
+  function mkMoon(parent) {
+    var ns = 'http://www.w3.org/2000/svg';
+    function node(name, cls, r) {
+      var e = document.createElementNS(ns, name);
+      e.setAttribute('class', cls);
+      if (r) e.setAttribute('r', r);
+      return e;
     }
-    q.innerHTML = '';
-    for (var i = 0; i < coins.length; i++) {
-      var item = el('span', 'q', q);
-      item.setAttribute('data-coin', coins[i]);
-      coin(coins[i], item);
-      el('span', '', item, Data.compact(Data.prices[coins[i]]));
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'moon');
+    svg.setAttribute('viewBox', '-9 -9 18 18');
+    var disc = node('circle', 'disc', '7.4'), lit = node('path', 'lit'), rim = node('circle', 'rim', '7.4');
+    svg.appendChild(disc);
+    svg.appendChild(lit);
+    svg.appendChild(rim);
+    parent.appendChild(svg);
+    return {svg: svg, lit: lit};
+  }
+
+  /** What the beach is like right now, for a buggy: the strip says it short, the panel says it whole. */
+  function beachInfo(b, big) {
+    if (b.state === 'in' && !b.close) return {text: tr('praia liberada', 'beach open', 'playa libre'), cls: 'ok'};
+    if (b.state === 'always') return {text: big ? tr('Praia: liberada o dia todo', 'Beach: open all day', 'Playa: libre todo el día') : tr('praia liberada', 'beach open', 'playa libre'), cls: 'ok'};
+    if (b.state === 'never') return {text: big ? tr('Praia: fechada hoje', 'Beach: closed today', 'Playa: cerrada hoy') : tr('praia fechada hoje', 'beach closed today', 'playa cerrada hoy'), cls: 'warn'};
+    if (b.state === 'in') return {
+      text: (big ? tr('Praia: pode entrar · saia até', 'Beach: go now · leave by', 'Playa: puedes entrar · sal hasta') : tr('praia até', 'beach until', 'playa hasta')) + ' ' + Data.time(b.close),
+      cls: 'ok'
+    };
+    if (b.state === 'out' && !b.open) return {text: big ? tr('Praia: fechada hoje', 'Beach: closed today', 'Playa: cerrada hoy') : tr('praia fechada hoje', 'beach closed today', 'playa cerrada hoy'), cls: 'warn'};
+    if (b.state === 'out') return {
+      text: (big ? tr('Praia: não entre · abre', 'Beach: stay off · opens', 'Playa: no entres · abre') : tr('praia abre', 'beach opens', 'playa abre')) + ' ' + Data.time(b.open),
+      cls: 'warn'
+    };
+    return {text: '', cls: ''};
+  }
+
+  var tideInfo = null, moonSig = '', tideTick = -1;
+
+  function buildTideInfo() {
+    var box = $('tideinfo');
+    box.innerHTML = '';
+    tideInfo = {moon: mkMoon(box)};
+    tideInfo.phase = el('span', 'phase', box);
+    el('span', 'sep', box, '·');
+    tideInfo.lvl = el('span', 'lvl', box);
+    tideInfo.sep = el('span', 'sep', box, '·');
+    tideInfo.praia = el('span', 'praia', box);
+  }
+
+  /** The top corner: the moon, the tide's level and way, and when the beach closes (or opens). */
+  function renderTide() {
+    if (!tideInfo) buildTideInfo();
+    var box = $('tideinfo'), now = Date.now(), m = Data.moon(now);
+    setClass(box, 'off', !Prefs.tide());
+    var sig = Math.round(m.phase * 32) + '|' + Math.round(m.illumination * 40) + '|' + (m.up ? 1 : 0);
+    if (sig !== moonSig) {
+      moonSig = sig;
+      tideInfo.moon.lit.setAttribute('d', moonPath(m.phase, 7.4));
+      tideInfo.moon.lit.setAttribute('transform', m.phase > 0.5 ? 'scale(-1 1)' : '');
+      tideInfo.moon.svg.setAttribute('opacity', m.up ? '1' : '0.5');
+      setText(tideInfo.phase, moonName(m.phase));
     }
+    var level = Data.levelAt(now), next = Data.nextExtreme(now), arrow = next ? (next.kind === 'max' ? ' ↑' : ' ↓') : '';
+    setText(tideInfo.lvl, isNaN(level) ? tr('maré', 'tide', 'marea') + ' —' : tr('maré', 'tide', 'marea') + ' ' + Data.meters(level) + arrow);
+    var beach = beachInfo(Data.beach(Prefs.beachLevel(), now), false);
+    setText(tideInfo.praia, beach.text);
+    setClass(tideInfo.praia, 'ok', beach.cls === 'ok');
+    setClass(tideInfo.praia, 'warn', beach.cls === 'warn');
+    // Without tide data there is no beach answer: the separator goes with it.
+    var show = beach.text ? '' : 'none';
+    if (tideInfo.sep.style.display !== show) tideInfo.sep.style.display = show;
+  }
+
+  /** The tide changes slowly: the corner and the panel are redrawn once a minute at most. */
+  function tickTide() {
+    var bucket = Math.floor(Date.now() / 60000);
+    if (bucket === tideTick) return;
+    tideTick = bucket;
+    renderTide();
+    updateTidePanel();
   }
 
   // MARK: - Picks and background
@@ -516,7 +593,7 @@
     platter.style.width = (width + 2 * pad) + 'px';
     platter.style.top = (814 + 126 - th) + 'px';
     platter.style.height = (th + 2 * pad) + 'px';
-    $('quotes').style.right = (1920 - left - width) + 'px';
+    $('tideinfo').style.right = (1920 - left - width) + 'px';
     var tiles = $('tiles');
     tiles.innerHTML = '';
     for (var i = 0; i < n; i++) {
@@ -576,44 +653,43 @@
     updateFocus();
   }
 
-  // The weather and the prices change every few minutes. The panels are built once
+  // The weather and the tide change every few minutes. The panels are built once
   // and after that only their text changes: rebuilding them took the glass, the
   // icons and every row out of the screen and put them back on each refresh.
-  var panelsSig = '', panels = {weather: null, prices: null};
+  var panelsSig = '', panels = {weather: null, tide: null};
 
   function renderPanels() {
-    var wx = Prefs.weather(), coins = Data.activeCoins(), qt = coins.length > 0;
-    // The structure follows which panels show, which coins, and whether there is
-    // weather data at all yet.
-    var sig = (wx ? 'w' + (Data.weather ? 1 : 0) : '-') + '|' + (qt ? 'q' + coins.join(',') : '-');
+    var wx = Prefs.weather(), td = Prefs.tide();
+    // The structure follows which panels show and whether there is weather yet.
+    var sig = (wx ? 'w' + (Data.weather ? 1 : 0) : '-') + '|' + (td ? 't' : '-');
     if (sig !== panelsSig) {
       panelsSig = sig;
-      buildPanels(wx, qt, coins);
+      buildPanels(wx, td);
     }
     if (panels.weather) updateWeather(panels.weather);
-    if (panels.prices) updatePrices(panels.prices, coins);
+    if (panels.tide) updateTidePanel();
   }
 
-  function buildPanels(wx, qt, coins) {
+  function buildPanels(wx, td) {
     var d = $('drawer');
     var old = d.querySelectorAll('.panel');
     for (var o = 0; o < old.length; o++) d.removeChild(old[o]);
-    panels = {weather: null, prices: null};
+    panels = {weather: null, tide: null};
     var split = 80 + 1760 * 0.585;
     if (wx) {
       var w = el('div', 'panel glass', d);
       w.id = 'weather';
       w.style.left = '80px';
-      w.style.width = ((qt ? split - 16 : 1840) - 80) + 'px';
+      w.style.width = ((td ? split - 16 : 1840) - 80) + 'px';
       panels.weather = buildWeather(w);
     }
-    if (qt) {
-      var q = el('div', 'panel glass', d);
-      q.id = 'prices';
+    if (td) {
+      var t = el('div', 'panel glass', d);
+      t.id = 'tide';
       var left = wx ? split + 16 : 80;
-      q.style.left = left + 'px';
-      q.style.width = (1840 - left) + 'px';
-      panels.prices = buildPrices(q, coins);
+      t.style.left = left + 'px';
+      t.style.width = (1840 - left) + 'px';
+      panels.tide = buildTidePanel(t, 1840 - left - 68);
     }
   }
 
@@ -675,27 +751,134 @@
     if (box.sun[1].row.style.display !== (w.sunset ? '' : 'none')) box.sun[1].row.style.display = w.sunset ? '' : 'none';
   }
 
-  function buildPrices(card, coins) {
-    el('div', 'head', card, tr('Cotações', 'Crypto', 'Cripto'));   // never changes: built once
-    var box = {side: el('div', 'side', card), rows: []};
-    for (var j = 0; j < coins.length; j++) {
-      var row = el('div', 'coin', card);
-      row.style.top = (86 + 52 * j) + 'px';
-      coin(coins[j], row);
-      box.rows.push({n: el('span', 'n', row), p: el('span', 'p', row), c: el('span', 'c', row)});
+  /** The tide panel: the day's curve with the beach's limit, its highs and lows, and the moon. */
+  function buildTidePanel(card, width) {
+    var box = {width: width, dots: [], ptsSig: '', extSig: '', nowTick: -1, moonSig: ''};
+    el('div', 'head', card, tr('Maré', 'Tide', 'Marea'));
+    box.side = el('div', 'side', card);
+    var ns = 'http://www.w3.org/2000/svg', H = 92;
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'curve');
+    svg.setAttribute('viewBox', '0 0 ' + width + ' ' + H);
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', H);
+    function node(name, attrs) {
+      var e = document.createElementNS(ns, name);
+      for (var k in attrs) if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]);
+      svg.appendChild(e);
+      return e;
     }
+    box.thr = node('line', {x1: 0, y1: 0, x2: width, y2: 0, 'class': 'thr'});
+    box.area = node('path', {'class': 'area'});
+    box.line = node('path', {'class': 'line'});
+    box.now = node('line', {x1: 0, y1: 0, x2: 0, y2: H, 'class': 'now'});
+    card.appendChild(svg);
+    box.chart = svg;
+    box.nodata = el('div', 'nodata', card, tr('Sem dados da maré agora.', 'No tide data right now.', 'No hay datos de marea ahora.'));
+    box.extr = el('div', 'extr', card);
+    box.beach = el('div', 'beach', card);
+    var moonLine = el('div', 'moonline', card);
+    box.moon = mkMoon(moonLine);
+    box.moonText = el('span', '', moonLine);
+    box.source = el('div', 'source', card);
     return box;
   }
 
-  function updatePrices(box, coins) {
-    setText(box.side, Data.staleness(Data.pricesAt, 5 * 60000) || tr('variação em 24 h', '24h change', 'variación en 24 h'));
-    for (var j = 0; j < coins.length; j++) {
-      var i = coins[j], r = box.rows[j], ch = Data.changes[i], known = !isNaN(ch);
-      setText(r.n, Data.coinName(i));
-      setText(r.p, Data.money(Data.prices[i]));
-      setText(r.c, known ? Data.change(ch) : '');
-      setClass(r.c, 'up', known && ch >= 0);
-      setClass(r.c, 'down', known && ch < 0);
+  function drawCurve(box, pts, dayStart) {
+    var H = 92, min = Infinity, max = -Infinity, i;
+    for (i = 0; i < pts.length; i++) {
+      if (pts[i].level < min) min = pts[i].level;
+      if (pts[i].level > max) max = pts[i].level;
+    }
+    if (!isFinite(min) || !isFinite(max)) return;
+    var pad = Math.max(0.12, (max - min) * 0.15);
+    box.lo = min - pad;
+    box.hi = max + pad;
+    function y(level) { return H - (level - box.lo) / (box.hi - box.lo) * H; }
+    function x(t) { return (t - dayStart) / 86400000 * box.width; }
+    var d = '';
+    for (i = 0; i < pts.length; i++) {
+      d += (i ? 'L' : 'M') + Math.round(x(pts[i].t) * 10) / 10 + ' ' + Math.round(y(pts[i].level) * 10) / 10;
+    }
+    box.line.setAttribute('d', d);
+    box.area.setAttribute('d', 'M0 ' + H + d.replace(/^M/, 'L') + 'L' + box.width + ' ' + H + 'Z');
+    // The beach's limit, only when it crosses this day's water.
+    var limit = Prefs.beachLevel(), ty = y(limit), on = limit > box.lo && limit < box.hi;
+    box.thr.setAttribute('y1', ty.toFixed(1));
+    box.thr.setAttribute('y2', ty.toFixed(1));
+    box.thr.setAttribute('visibility', on ? 'visible' : 'hidden');
+  }
+
+  function placeDots(box, extremes, dayStart) {
+    for (var i = 0; i < box.dots.length; i++) box.chart.removeChild(box.dots[i]);
+    box.dots = [];
+    if (box.lo === undefined) return;
+    for (var j = 0; j < extremes.length; j++) {
+      var e = extremes[j];
+      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('class', 'dot ' + e.kind);
+      c.setAttribute('r', '3.2');
+      c.setAttribute('cx', ((e.t - dayStart) / 86400000 * box.width).toFixed(1));
+      c.setAttribute('cy', (92 - (e.level - box.lo) / (box.hi - box.lo) * 92).toFixed(1));
+      box.chart.appendChild(c);
+      box.dots.push(c);
+    }
+  }
+
+  function shortSource(label) {
+    if (!label) return '';
+    if (label.indexOf('Tábua') < 0) return label;
+    var s = label.replace(/^.*?—\s*/, '').replace(/\s*\(.*$/, '').replace(/^PORTO DE\s+/i, '');
+    s = s.toLowerCase().replace(/(^|\s)([a-zà-ú])/g, function (m, sp, ch) { return sp + ch.toUpperCase(); });
+    return 'Tábua · ' + s;
+  }
+
+  function updateTidePanel() {
+    var box = panels.tide;
+    if (!box) return;
+    var now = Date.now(), d = new Date(now);
+    var start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), end = start + 86400000;
+    var level = Data.levelAt(now), next = Data.nextExtreme(now), has = !isNaN(level);
+    if (box.chart.style.display !== (has ? '' : 'none')) box.chart.style.display = has ? '' : 'none';
+    setClass(box.nodata, 'on', !has);
+    setText(box.side, has ? tr('agora', 'now', 'ahora') + ' ' + Data.meters(level) + (next ? (next.kind === 'max' ? ' ↑' : ' ↓') : '') : '');
+    var beach = beachInfo(Data.beach(Prefs.beachLevel(), now), true);
+    setText(box.beach, beach.text);
+    setClass(box.beach, 'ok', beach.cls === 'ok');
+    setClass(box.beach, 'warn', beach.cls === 'warn');
+    var ext = Data.todayExtremes(now), parts = [], esig = '';
+    for (var i = 0; i < ext.length; i++) {
+      parts.push((ext[i].kind === 'max' ? '↑ ' : '↓ ') + Data.time(ext[i].t) + ' ' + Data.height(ext[i].level));
+      esig += ext[i].t + ':' + ext[i].level + ',';
+    }
+    setText(box.extr, parts.join('   ·   '));
+    var pts = Data.curve(start, end);
+    var psig = pts.length + '|' + (pts.length ? pts[0].t : 0) + '|' + (pts.length ? pts[pts.length - 1].t : 0);
+    if (pts.length && psig !== box.ptsSig) {
+      box.ptsSig = psig;
+      drawCurve(box, pts, start);
+      box.extSig = '';
+    }
+    if (esig !== box.extSig) {
+      box.extSig = esig;
+      placeDots(box, ext, start);
+    }
+    var m = Data.moon(now), msig = Math.round(m.phase * 32) + '|' + Math.round(m.illumination * 40);
+    if (msig !== box.moonSig) {
+      box.moonSig = msig;
+      box.moon.lit.setAttribute('d', moonPath(m.phase, 7.4));
+      box.moon.lit.setAttribute('transform', m.phase > 0.5 ? 'scale(-1 1)' : '');
+      setText(box.moonText, moonName(m.phase) + ' · ' + Math.round(m.illumination * 100) + '%' +
+        (m.rise ? ' · ' + tr('nasce', 'rises', 'sale') + ' ' + Data.time(m.rise) : ''));
+    }
+    setText(box.source, shortSource(Data.tideLabel()));
+    // The cursor moves every five minutes; a tide is not a stopwatch.
+    var bucket = Math.floor(now / 300000);
+    if (has && bucket !== box.nowTick) {
+      box.nowTick = bucket;
+      var x = (now - start) / (end - start) * box.width;
+      box.now.setAttribute('x1', x.toFixed(1));
+      box.now.setAttribute('x2', x.toFixed(1));
     }
   }
 
@@ -769,19 +952,19 @@
         step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
       {label: tr('Widget do clima', 'Weather widget', 'Widget del clima'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
-      {label: tr('Widget de cotações', 'Quotes widget', 'Widget de cotizaciones'), toggle: Prefs.quotes(),
-        step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
+      {label: tr('Widget de maré e lua', 'Tide & moon', 'Widget de marea y luna'), toggle: Prefs.tide(),
+        step: function () { Prefs.set('tide', !Prefs.tide()); renderPanels(); renderTide(); }},
+      {label: tr('Limite da praia', 'Beach limit', 'Límite de playa'), value: Data.meters(Prefs.beachLevel()),
+        step: function (d) {
+          // The level at which the water reaches the sand track: above it, no buggy.
+          var v = Math.round((Prefs.beachLevel() + (d > 0 ? 0.1 : -0.1)) * 10) / 10;
+          Prefs.set('beachLevel', Math.max(-0.5, Math.min(2, v)));
+          renderPanels();
+          renderTide();
+        }},
+      {label: tr('Prateleira', 'Shelf', 'Estante'), value: '›', step: function (d) { if (d >= 0) openShelfEdit(); }},
+      {label: tr('Ajustes da TV', 'TV Settings', 'Ajustes del TV'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }}
     ];
-    var names = ['Bitcoin', 'Ethereum', 'Solana', tr('Dólar', 'Dollar', 'Dólar')];
-    var count = Data.currency === 'BRL' ? 4 : 3;
-    for (var i = 0; i < count; i++) {
-      (function (i) {
-        rows.push({label: names[i], toggle: Prefs.quotes() && Prefs.coin(i), dim: !Prefs.quotes(),
-          step: function () { if (Prefs.quotes()) { Prefs.setCoin(i, !Prefs.coin(i)); Data.settingsChanged(); } }});
-      })(i);
-    }
-    rows.push({label: tr('Prateleira', 'Shelf', 'Estante'), value: '›', step: function (d) { if (d >= 0) openShelfEdit(); }});
-    rows.push({label: tr('Ajustes da TV', 'TV Settings', 'Ajustes del TV'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }});
     return rows;
   }
 
@@ -1242,7 +1425,7 @@
 
   function renderAll() {
     renderTop();
-    renderQuotes();
+    renderTide();
     cards = [];
     renderCards();
     renderShelf();
@@ -1278,7 +1461,7 @@
   }
 
   Data.onChange(function () {
-    renderQuotes();
+    renderTide();
     renderCards();
     renderPanels();
     checkNight();
@@ -1323,11 +1506,13 @@
     renderClock();
     checkNight();
     renderDevMode();
+    tickTide();
     Data.refresh();
     if (!saverOn && !sheetOpen() && Date.now() - idleAt > SAVER_AFTER) showSaver();
     if (saverOn) tickSaverClock($('saver').querySelector('.clock'));
   }, 30000);
 
   // For the browser preview and tests.
-  window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast};
+  window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver,
+    toast: toast, render: function () { renderTide(); renderPanels(); }};
 })();

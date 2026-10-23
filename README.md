@@ -20,11 +20,11 @@ Open source. Built with Claude Code. One button to undo.
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
 - **Your apps, front and center.** The streaming apps you actually use, on a glass shelf. Pick them and their order right on the TV.
 - **Trending, not sponsored.** Three fresh picks every hour from what's trending this week and the latest releases, only from apps you already have. Movies and Shows get their own tabs.
-- **Weather and markets, one press away.** The hour-by-hour forecast, sunrise and sunset, and live crypto prices.
+- **Weather, tide and moon, one press away.** The hour-by-hour forecast, sunrise and sunset, the moon's phase and the day's tide — with the window when the beach is low enough for a buggy, and when it is time to leave it. (On Google TV the drawer shows market prices instead.)
 - **Light by day, dark by night.** It follows your city's real sunset, the way your phone does.
 - **A screensaver to match.** Full-screen photos of the picks with a big glass clock.
 - **Fast.** 60 fps, every frame in 16.6 ms, on the TV's own chip. The home screen uses 96 MB of memory instead of 242 MB (−60%).<br><sub>Measured on a 98″ TCL Google TV running Android 14.</sub>
-- **Set up on the TV.** Language, your city, temperature, theme, the weather and prices cards, which coins, and the apps on the shelf, in Free My TV's own settings.
+- **Set up on the TV.** Language, your city, temperature, theme, the weather and tide cards, the tide limit for the beach, and the apps on the shelf, in Free My TV's own settings. (On Google TV: the prices card and which coins.)
 - **Safe.** No root. Nothing is uninstalled. One button brings back the factory home screen.
 
 ## Install
@@ -109,12 +109,17 @@ The first values come from `config.properties`, created by the first build (Goog
 | `tmdb_key` | Your free TMDB key, for the picks | empty |
 | `tmdb_region` | Your country (two letters): which titles are on which app | `US` |
 | `watchmode_key` | Optional, free [Watchmode](https://api.watchmode.com/) key: a pick opens the title's page in its app | empty |
-| `latitude`, `longitude` | Your city, for the weather and the sunset | New York |
-| `city` | The name on the weather card | `Weather` |
+| `latitude`, `longitude` | Your city or beach, for the weather, the sunset, the moon and the tide | Praia das Fontes, Beberibe/CE |
+| `city` | The name on the weather card | `Praia das Fontes` |
 | `hide_animation` | Leave cartoons and anime out of the picks | `false` |
 | `language` | `auto` (follows the TV), or a language with a [translation](#translations) (`en`, `pt`, `es`, `de`, `ru`, `fr`, `ja`…) on Google TV; `en`, `es`, `pt`, `ru` or `de` on LG and Samsung | `auto` |
-| `show_crypto` | Show Binance crypto prices on home and screensaver | `true` |
-| `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
+| `show_crypto` | Google TV only: show Binance crypto prices on home and screensaver | `true` |
+| `currency` | Google TV only: crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
+| `tide_lat`, `tide_lon` | LG and Samsung: the beach the tide is read for (decimal degrees); empty = your city | empty |
+| `tide_beach_level` | LG and Samsung: the tide height (metres, in the tide table's datum) above which the water reaches the sand track | `0.3` |
+| `tide_api_key` | LG and Samsung: optional key for the association's tide endpoint (the Tábua das Marés, with its exact highs and lows); without it the tide comes from Open-Meteo's marine model | empty |
+| `tide_url` | LG and Samsung: the tide endpoint; only change it to use another pass | `https://associacao.teintinu.com/api/passeio` |
+| `tide_widget` | LG and Samsung: show the moon and the tide on the home screen | `true` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
 | `disable_assistant` | Also turn off Google Assistant | `false` |
 | `hide_services` | Streaming services to leave out of the picks even when their app is on the TV (`netflix`, `prime`, `disney`…), comma separated; for apps the TV ships that you don't subscribe to. Google TV only | empty |
@@ -182,7 +187,7 @@ It's your code, and Claude Code finds its way around it. Try:
 - **Drawn by hand on one Canvas**, with Android 13 shaders for the frosted glass and the sky (plain fills on Android 8 to 12, with lighter shadows and no GPU layers on 8 to 11 for their older GPUs).
 - **A safety net.** A watchdog in a separate process brings back the stock home screen after three crashes in five minutes, and a boot check keeps your choice after TV updates.
 - **On LG and Samsung, the same design in plain HTML, CSS and JavaScript** ([`web/`](web)), written for the Chromium of older TVs, with no frameworks. [`webos/build.py`](webos/build.py) packs it with `config.properties` into an `.ipk` without LG's tools, and [`webos/install.py`](webos/install.py) installs it through Developer Mode; on LG it lists and opens apps through the TV's own service bus (Luna), as LG's launcher does. [`tizen/build.py`](tizen/build.py) packs the same app into a Samsung `.wgt`, which uses Tizen's web APIs for the apps and the inputs. To preview it on a computer: `python3 webos/build.py --preview`, then open `out/webos/index.html` (a stand-in lists sample apps).
-- **Data** from TMDB (trending titles, new releases and which app streams what in your country), Open-Meteo (forecast, sunrise and sunset), and optionally Binance (24-hour prices when `show_crypto=true`).
+- **Data** from TMDB (trending titles, new releases and which app streams what in your country), Open-Meteo (forecast, sunrise and sunset, and the marine model behind the tide when there is no tide key), the Tábua das Marés through the association's endpoint (on LG and Samsung, when `tide_api_key` is set), and optionally Binance (Google TV: 24-hour prices when `show_crypto=true`). The moon is computed on the TV, with no network.
 
 | File | What it is |
 |---|---|
@@ -229,7 +234,7 @@ reference (fix them by hand); the others were machine-made, and corrections from
 
 ## Privacy
 
-No accounts, no analytics, no tracking. The app talks to TMDB, Open-Meteo (with the coordinates you set, or your time zone's main city), and Binance only when `show_crypto=true`, and Watchmode only when you set a `watchmode_key`. Your settings stay on your computer and your TV.
+No accounts, no analytics, no tracking. The app talks to TMDB, Open-Meteo (with the coordinates you set, or your time zone's main city), Binance only when `show_crypto=true` (Google TV), the association's tide endpoint only when you set a `tide_api_key`, and Watchmode only when you set a `watchmode_key`. Your settings stay on your computer and your TV. The moon is computed on the TV.
 
 ## Credits
 
@@ -238,7 +243,7 @@ No accounts, no analytics, no tracking. The app talks to TMDB, Open-Meteo (with 
 - On Samsung TVs it installs with [TizenBrew Installer](https://github.com/reisxd/TizenBrewInstaller) by [@reisxd](https://github.com/reisxd).
 - This product uses the TMDB API but is not endorsed or certified by [TMDB](https://www.themoviedb.org/).
 - Links to the titles in the streaming apps by [Watchmode](https://api.watchmode.com/).
-- Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0). Prices from the [Binance](https://www.binance.com/) public API.
+- Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0); the tide without a key comes from its marine model. Tide tables from the [Tábua das Marés](https://www.marinha.mil.br/chm/tabuas-de-mare) (DHN/IBGE). Prices from the [Binance](https://www.binance.com/) public API (Google TV).
 - Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Font: [Inter](https://rsms.me/inter/) (SIL OFL 1.1). Coin logos: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) (CC0). Samsung app logos: [Simple Icons](https://simpleicons.org) (CC0).
 - Not affiliated with Google, TCL, LG, Samsung or any streaming service. App names and logos belong to their owners.
 

@@ -23,6 +23,10 @@ before you do it, and let them do the taps on the TV.
    - Windows: Git Bash (what Claude Code runs there; `build.sh` handles it) or WSL, then as on Linux.
 3. **Settings:** run `./build.sh` once; it creates `config.properties`. Fill in `latitude` and `longitude` (decimal
    degrees) and `city` for their city, `tmdb_region` (two-letter country), `show_crypto`, `currency` and `temperature` to match.
+   For LG and Samsung also `tide_lat`/`tide_lon` (the beach the tide is read for), `tide_beach_level` (the height above
+   which the water reaches the sand track) and, if they have one, `tide_api_key` (the Tábua das Marés through the
+   association's `/api/passeio`; without it the tide comes from Open-Meteo Marine). The keys are the person's: only in
+   `config.properties`, never committed.
 4. **The TMDB key is theirs and secret.** Ask them to create one (free: themoviedb.org → Settings → API) and paste it
    after `tmdb_key=` in `config.properties` themselves. Don't ask for it in the chat, never print it, never commit
    it. If they paste it in the chat anyway, put it only in `config.properties`.
@@ -63,7 +67,10 @@ stays, and Free My TV opens with a long press of a number key.
    (webostv.developer.lge.com) → *Dev Mode Status* on (the TV restarts) → *Key Server* on. It shows the IP and a
    passphrase.
 3. **Settings:** the same `config.properties` as on Android (the first `python3 webos/build.py` creates it). The
-   TMDB key rules above apply.
+   TMDB key rules above apply. Set `tide_lat`/`tide_lon` to the beach they drive to (a point inland is fine: the tide
+   services snap it to the sea), `tide_beach_level` to the height where their beach closes for a buggy (0.3 m on the
+   Mucuripe table), and `tide_api_key` for the Tábua's own highs and lows; without a key the tide is Open-Meteo
+   Marine's model, whose levels sit on a different datum (so tune `tide_beach_level` on the TV).
 4. **Build:** `python3 webos/build.py` must end with `Built FreeMyTV-webos.ipk`.
 5. **Install:** the first time needs the TV's passphrase, typed by them: ask them to run
    `python3 webos/install.py <IP>` in their own terminal (yours can't answer its prompt, and the passphrase doesn't go
@@ -220,8 +227,14 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   id in `SAMSUNG_ICONS` (SVGs need a width and height for old WebKit); some names are empty or long
   (`SAMSUNG_TITLES`); and Tizen 3 answers no "settings" app control, so TV Settings opens `org.tizen.menu`.
   `web/home.js` follows `HomeView`'s layout and behavior, so a design change on
-  Android belongs there too. Text: `tr(pt, en, es)`, with the German and Russian in `web/strings.js` (keyed by the English). Built without a city (`--generic`), `web/zones.js`
-  (`tools/make_zones.py`, from the tz database) turns the TV's time zone into the city, the currency and the region.
+  Android belongs there too — except the tide and the moon (see below), which so far exist only in the web app.
+  The top corner and the drawer show the moon (phase, lit part, the hour it rises; computed in `web/data.js`, no
+  network) and the tide (the Tábua das Marés through the association's `/api/passeio` when `tide_api_key` is set,
+  Open-Meteo Marine when it is not): the day's curve, the highs and lows, and the window when the water is below
+  `tide_beach_level` — "praia até HH:MM" (go in, leave by then) or "praia abre HH:MM" (stay off). The Android app
+  still shows the crypto quotes: a port of the tide there remains.
+  Text: `tr(pt, en, es)`, with the German and Russian in `web/strings.js` (keyed by the English). Built without a city (`--generic`), `web/zones.js`
+  (`tools/make_zones.py`, from the tz database) turns the TV's time zone into the city and the region.
   `tools/webapp.py` is what both builds share. Preview: `python3 webos/build.py --preview` (or `tizen/build.py`), then
   open `out/webos/index.html` in a browser (a stand-in lists sample apps).
 
