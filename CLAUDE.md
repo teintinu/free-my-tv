@@ -228,10 +228,16 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   (`SAMSUNG_TITLES`); and Tizen 3 answers no "settings" app control, so TV Settings opens `org.tizen.menu`.
   `web/home.js` follows `HomeView`'s layout and behavior, so a design change on
   Android belongs there too — except the tide and the moon (see below), which so far exist only in the web app.
-  The top corner and the drawer show the moon (phase, lit part, the hour it rises; computed in `web/data.js`, no
-  network) and the tide (the Tábua das Marés through the association's `/api/passeio` when `tide_api_key` is set,
-  Open-Meteo Marine when it is not): the day's curve, the highs and lows, and the window when the water is below
-  `tide_beach_level` — "praia até HH:MM" (go in, leave by then) or "praia abre HH:MM" (stay off). The Android app
+  The top corner and the drawer show the moon (phase with a "Lua" in front of it, lit part, and the hours it is
+  above the horizon — `rise` and `set` from `web/data.js`, no network) and the tide (the Tábua das Marés through the
+  association's `/api/passeio` when `tide_api_key` is set, Open-Meteo Marine when it is not): the day's curve, the
+  highs and lows, and the stretches when the water is below `tide_beach_level`. The strip at the top prints the two
+  next of those ("agora até 12:09 · depois 17:16–00:17") after a buggy icon that takes the colour of the answer, and
+  the drawer's chart repeats the reading in colour, as the association's dashboard does: one vertical gradient on the
+  line and the area, red down to the limit and blue below it (four stops set in `drawCurve`), green bands behind the
+  curve for the windows (`Data.beachSpans`), red and blue dots for the highs and lows, and the limit dashed in green.
+  The credit at the panel's foot is hidden when the weather panel is beside it (`box.width < 720`), where it would
+  touch the moon's hours. The Android app
   still shows the crypto quotes and its own shelf (eight apps, picked and ordered on the TV): a port of the
   tide and of the automatic shelf remains.
   The web shelf lists every app the TV exposes (`listLaunchPoints`; without root there is no way to see the ones

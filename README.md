@@ -19,8 +19,8 @@ Open source. Built with Claude Code. One button to undo.
 
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
 - **Your apps, front and center.** A glass shelf with the apps you actually use. On Google TV you pick them and their order right on the TV; on LG and Samsung every app the TV has is there, drawn as its own brand tile (Netflix, YouTube, Prime Video, Disney+, Max, Apple TV, Globoplay, Pluto TV, Hotmart…), the most used first, and the shelf slides right to the ones you open less. The tile under the remote's focus plays a short sheen.
-- **Trending, not sponsored.** Three fresh picks every hour from what's trending this week and the latest releases, only from apps you already have. Movies and Shows get their own tabs.
-- **Weather, tide and moon, one press away.** The hour-by-hour forecast, sunrise and sunset, the moon's phase and the day's tide — with the window when the beach is low enough for a buggy, and when it is time to leave it. (On Google TV the drawer shows market prices instead.)
+- **Trending, not sponsored.** Fresh picks every hour from what's trending this week and the latest releases, only from apps you already have: one wide card and a row that slides right to the rest of the hour's picks. Movies and Shows get their own tabs.
+- **Weather, tide and moon, one press away.** The hour-by-hour forecast, sunrise and sunset, the moon's phase with the hours it is up, and the day's tide, drawn in colour: red where the water is over the beach's limit, blue under it, green over the stretches a buggy can take the sand. The home also says the next two of those stretches, and when to leave the sand. (On Google TV the drawer shows market prices instead.)
 - **Light by day, dark by night.** It follows your city's real sunset, the way your phone does.
 - **A screensaver to match.** Full-screen photos of the picks with a big glass clock.
 - **Fast.** 60 fps, every frame in 16.6 ms, on the TV's own chip. The home screen uses 96 MB of memory instead of 242 MB (−60%).<br><sub>Measured on a 98″ TCL Google TV running Android 14.</sub>

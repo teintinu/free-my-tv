@@ -367,6 +367,28 @@ var Data = (function () {
     return inside ? {state: 'in', close: next.t} : {state: 'out', open: next.t};
   }
 
+  /** The stretches between `from` and `to` where the water is below `level`: [{start, end}] (end 0: still open). */
+  function beachSpans(level, from, to) {
+    if (!tide || !tide.points.length || isNaN(level)) return [];
+    var last = tide.points[tide.points.length - 1][0];
+    to = Math.min(to, last);
+    if (to <= from) return [];
+    var out = [], open = levelAt(from) < level, start = open ? from : 0;
+    var list = crossings(level, from, to);
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (open && c.up) { out.push({start: start, end: c.t}); open = false; start = 0; }
+      else if (!open && !c.up) { open = true; start = c.t; }
+    }
+    if (open && start) out.push({start: start, end: to});
+    return out;
+  }
+
+  /** The next stretches a buggy can take the sand, from now: the one open right now comes first. */
+  function beachWindows(level, now, count) {
+    return beachSpans(level, now, now + 36 * 3600000).slice(0, count || 2);
+  }
+
   // MARK: - The moon
   //
   // Low-precision lunar and solar positions (a few tenths of a degree): enough for the phase, the lit part and
@@ -508,8 +530,8 @@ var Data = (function () {
     return (cut > 0 ? t.slice(0, cut) : t).replace(/^\s+|\s+$/g, '');
   }
 
-  /** This hour's 3 picks: movies ("movie"), shows ("tv") or both (null). */
-  function now(kind) {
+  /** This hour's picks (three unless the row asks for more): movies ("movie"), shows ("tv") or both (null). */
+  function now(kind, count) {
     var list = [];
     if (!KEY) return list;
     for (var i = 0; i < picks.length; i++) {
@@ -517,8 +539,8 @@ var Data = (function () {
       if ((kind === null || kind === p.kind) && (!p.detailed || (p.app && appFor(p.app)))) list.push(p);
     }
     if (!list.length) return list;
-    var hour = Math.floor(Date.now() / 3600000), out = [], seen = {};
-    for (var j = 0; j < list.length && out.length < 3; j++) {
+    var hour = Math.floor(Date.now() / 3600000), out = [], seen = {}, want = count || 3;
+    for (var j = 0; j < list.length && out.length < want; j++) {
       var q = list[(hour * 3 + j) % list.length], f = franchise(q.title);
       if (!seen[f]) { seen[f] = true; out.push(q); }
     }
@@ -745,6 +767,8 @@ var Data = (function () {
     tideSource: function () { return tide ? tide.source : ''; },
     levelAt: levelAt,
     beach: beach,
+    beachWindows: beachWindows,
+    beachSpans: beachSpans,
     nextExtreme: nextExtreme,
     todayExtremes: extremesToday,
     /** The curve between two instants, for the day's chart. */
@@ -763,7 +787,7 @@ var Data = (function () {
     /** No key at all, or the first picks fetch is over: the home knows whether picks exist. */
     settled: function () { return !KEY || firstDone; },
     recsError: function () { return recsError; },
-    picks: now,
+    picks: function (kind, count) { return now(kind, count); },
     showcase: all,
     image: function (path, size) { return path ? 'https://image.tmdb.org/t/p/' + (size || 'w1280') + path : ''; },
 

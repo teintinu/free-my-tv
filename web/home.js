@@ -306,8 +306,9 @@
     list = $('buttons').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.TOP && st.top === 3 + i);
     setClass($('tideinfo'), 'hide', st.zone === Z.TOP && st.top >= 3);
-    list = $('cards').children;
+    list = document.querySelectorAll('#cards .card');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.CARDS && st.card === i);
+    updateCardScroll();
     list = document.querySelectorAll('#tiles .tile');
     var wasFirst = shelfFirst;
     updateShelfScroll();
@@ -390,18 +391,76 @@
 
   var MOON_PHASES = [
     ['Lua nova', 'New Moon', 'Luna nueva'],
-    ['Crescente côncava', 'Waxing Crescent', 'Creciente cóncava'],
-    ['Quarto crescente', 'First Quarter', 'Cuarto creciente'],
-    ['Crescente gibosa', 'Waxing Gibbous', 'Creciente gibosa'],
-    ['Cheia', 'Full Moon', 'Luna llena'],
-    ['Minguante gibosa', 'Waning Gibbous', 'Gibosa menguante'],
-    ['Quarto minguante', 'Last Quarter', 'Cuarto menguante'],
-    ['Minguante côncava', 'Waning Crescent', 'Menguante cóncava']
+    ['Lua crescente côncava', 'Waxing Crescent', 'Luna creciente cóncava'],
+    ['Lua quarto crescente', 'First Quarter', 'Luna cuarto creciente'],
+    ['Lua crescente gibosa', 'Waxing Gibbous', 'Luna creciente gibosa'],
+    ['Lua cheia', 'Full Moon', 'Luna llena'],
+    ['Lua minguante gibosa', 'Waning Gibbous', 'Luna menguante gibosa'],
+    ['Lua quarto minguante', 'Last Quarter', 'Luna cuarto menguante'],
+    ['Lua minguante côncava', 'Waning Crescent', 'Luna menguante cóncava']
   ];
 
   function moonName(phase) {
     var p = MOON_PHASES[Math.round(phase * 8) % 8];
     return tr(p[0], p[1], p[2]);
+  }
+
+  /** The hours the moon is above the horizon, "09:30–20:30" (a window that crosses midnight included). */
+  function moonWindow(m) {
+    if (m.rise && m.set) return Data.time(m.rise) + '–' + Data.time(m.set);
+    if (m.rise) return tr('das ', 'from ', 'desde ') + Data.time(m.rise);
+    if (m.set) return tr('até ', 'until ', 'hasta ') + Data.time(m.set);
+    return '';
+  }
+
+  /** The next stretches a buggy can take the sand, short: "agora até 12:09 · depois 18:20–22:30". */
+  function beachWindowsText(w) {
+    var out = [], now = Date.now(), openNow = false;
+    for (var i = 0; i < w.length; i++) {
+      var x = w[i];
+      if (x.start <= now + 60000) {
+        openNow = true;
+        out.push(tr('agora até ', 'now until ', 'ahora hasta ') + Data.time(x.end || x.start));
+      } else {
+        out.push(Data.time(x.start) + '–' + Data.time(x.end || x.start));
+      }
+    }
+    if (!out.length) return '';
+    return out[0] + (out.length > 1 ? ' · ' + (openNow ? tr('depois ', 'then ', 'luego ') : '') + out.slice(1).join(' · ') : '');
+  }
+
+  /** The strip's beach answer: the two next windows, or that there is none today. */
+  function beachShort(now) {
+    var level = Prefs.beachLevel(), b = Data.beach(level, now);
+    if (b.state === 'unknown') return {text: '', cls: ''};
+    if (b.state === 'always') return {text: tr('liberada o dia todo', 'open all day', 'libre todo el día'), cls: 'ok'};
+    if (b.state === 'never') return {text: tr('fechada hoje', 'closed today', 'cerrada hoy'), cls: 'warn'};
+    return {text: beachWindowsText(Data.beachWindows(level, now, 2)), cls: b.state === 'in' ? 'ok' : 'warn'};
+  }
+
+  /** A buggy, for the line that says when one can take the sand: big wheels, a low body and a flag. */
+  function buggyIcon(parent) {
+    var ns = 'http://www.w3.org/2000/svg';
+    function node(name, attrs) {
+      var e = document.createElementNS(ns, name);
+      for (var k in attrs) if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]);
+      parent.appendChild(e);
+      return e;
+    }
+    var svg = node('svg', {'class': 'buggy', viewBox: '0 0 24 24'});
+    function shape(name, attrs) {
+      var e = document.createElementNS(ns, name);
+      for (var k in attrs) if (attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]);
+      svg.appendChild(e);
+      return e;
+    }
+    shape('path', {d: 'M2.8 16.2c0-.4.3-.7.7-.7h1.3l1.8-3.2 1.5-2.6c.2-.4.6-.6 1-.6h4.8c.4 0 .8.2 1 .6l1.5 2.6 2.4 1.6c.3.2.5.5.5.9v1.4h-2.3v-.7H5.4v.7H2.8z', fill: 'currentColor'});
+    shape('circle', {cx: '7.1', cy: '17.2', r: '2.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.2'});
+    shape('circle', {cx: '17.6', cy: '17.2', r: '2.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.2'});
+    shape('path', {d: 'M9.1 9.7V7.5h5.4v2.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7'});
+    shape('path', {d: 'M3.5 13V6.4', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5'});
+    shape('path', {d: 'M3.7 6.2l3.3.9-3.3.9z', fill: 'currentColor'});
+    return svg;
   }
 
   /** The lit part of the moon as an SVG path in the -9..9 box (the waning half is mirrored). */
@@ -455,9 +514,12 @@
     box.innerHTML = '';
     tideInfo = {moon: mkMoon(box)};
     tideInfo.phase = el('span', 'phase', box);
-    el('span', 'sep', box, '·');
+    tideInfo.when = el('span', 'when', box);
+    tideInfo.sep1 = el('span', 'sep', box, '·');
     tideInfo.lvl = el('span', 'lvl', box);
     tideInfo.sep = el('span', 'sep', box, '·');
+    tideInfo.buggy = el('span', 'buggy', box);
+    tideInfo.icon = buggyIcon(tideInfo.buggy);
     tideInfo.praia = el('span', 'praia', box);
   }
 
@@ -477,13 +539,19 @@
     }
     var level = Data.levelAt(now), next = Data.nextExtreme(now), arrow = next ? (next.kind === 'max' ? ' ↑' : ' ↓') : '';
     setText(tideInfo.lvl, isNaN(level) ? tr('maré', 'tide', 'marea') + ' —' : tr('maré', 'tide', 'marea') + ' ' + Data.meters(level) + arrow);
-    var beach = beachInfo(Data.beach(Prefs.beachLevel(), now), false);
+    // The hours the moon is up, beside its phase: "Lua crescente gibosa (09:30–20:30)".
+    var win = moonWindow(m);
+    setText(tideInfo.when, win ? ' (' + win + ')' : '');
+    var beach = beachShort(now);
     setText(tideInfo.praia, beach.text);
     setClass(tideInfo.praia, 'ok', beach.cls === 'ok');
     setClass(tideInfo.praia, 'warn', beach.cls === 'warn');
-    // Without tide data there is no beach answer: the separator goes with it.
+    setClass(tideInfo.buggy, 'ok', beach.cls === 'ok');
+    setClass(tideInfo.buggy, 'warn', beach.cls === 'warn');
+    // Without tide data there is no beach answer: the separator and the buggy go with it.
     var show = beach.text ? '' : 'none';
     if (tideInfo.sep.style.display !== show) tideInfo.sep.style.display = show;
+    if (tideInfo.buggy.style.display !== show) tideInfo.buggy.style.display = show;
   }
 
   /** The tide changes slowly: the corner is redrawn once a minute at most, and the panel only while it is open
@@ -501,7 +569,7 @@
   var cardsGen = 0;
 
   function renderCards() {
-    var list = Data.picks(TAB_KIND[st.tab]);
+    var list = Data.picks(TAB_KIND[st.tab], 12);
     var holder = $('cards');
     // Without picks the big clock takes their place — but only once we know there
     // will be none: showing it while the first fetch runs made it vanish again
@@ -531,20 +599,33 @@
     });
   }
 
+  // The picks: a wide card for the first one, and beside it a row that slides to the rest — every pick of the
+  // hour is reachable with the right arrow, and the row is a window (overflow hidden) so the cards that went out
+  // of it don't sit on top of the hero. Its padding leaves room for the focused card's shadow.
+  var ROW_LEFT = 1120, ROW_PAD = 40, CARD_W = 320, CARD_GAP = 40, CARD_PITCH = CARD_W + CARD_GAP;
+  var rowFirst = 0;
+
   function swapCards(list, holder) {
     cards = list;
     holder.innerHTML = '';
-    var rects = [[80, 1040], [1160, 320], [1520, 320]];
+    var win = el('div', 'rowwin', holder), row = el('div', 'row', win);
+    rowFirst = 0;
     for (var c = 0; c < list.length; c++) {
-      var p = list[c], card = el('div', 'card', holder);
-      card.style.left = rects[c][0] + 'px';
-      card.style.width = rects[c][1] + 'px';
+      var p = list[c], hero = c === 0;
+      var card = el('div', 'card' + (hero ? ' hero' : ''), hero ? holder : row);
+      if (hero) {
+        card.style.left = '80px';
+        card.style.width = '1040px';
+      } else {
+        card.style.left = (ROW_PAD + (c - 1) * CARD_PITCH) + 'px';
+        card.style.width = CARD_W + 'px';
+      }
       var img = el('div', 'img', card);
-      // 1040px wide for the hero card, 320px for the two beside it: matching the
-      // slot keeps the download honest (w780 for a 320px slot was 6x the bytes).
-      img.style.backgroundImage = 'url(' + Data.image(p.backdrop, c === 0 ? 'w1280' : 'w300') + ')';
+      // 1040px wide for the hero card, 320px for the row: matching the slot keeps the download honest
+      // (w780 for a 320px slot was 6x the bytes).
+      img.style.backgroundImage = 'url(' + Data.image(p.backdrop, hero ? 'w1280' : 'w300') + ')';
       el('div', 'name', card, p.title);
-      if (c === 0 && p.meta) el('div', 'meta', card, p.meta);
+      if (hero && p.meta) el('div', 'meta', card, p.meta);
       hover(card, Z.CARDS, c);
     }
     st.card = Math.min(st.card, Math.max(0, list.length - 1));
@@ -553,6 +634,20 @@
     setClass(body, 'cards-ready', true);
     updateFocus();
     revealWhenPainted();
+  }
+
+  /** Slides the row so the focused pick is in view; the hero on the left never moves. */
+  function updateCardScroll() {
+    var row = $('cards').querySelector('.row');
+    if (!row) return;
+    var n = row.children.length, i = st.card - 1;
+    if (i < 0) i = 0;
+    var first = rowFirst;
+    if (i < first) first = i;
+    else if (i > first + 1) first = i - 1;
+    first = Math.max(0, Math.min(Math.max(0, n - 2), first));
+    rowFirst = first;
+    setTransform(row, 'translateX(' + (-first * CARD_PITCH) + 'px)');
   }
 
   var bgUrl = null, bgFront = 'bgA';
@@ -839,9 +934,46 @@
       svg.appendChild(e);
       return e;
     }
+    // Colours, as in the association's dashboard: the water above the beach's limit is red, below it is blue,
+    // and the stretches a buggy can take the sand are green bands behind the curve.
+    var defs = document.createElementNS(ns, 'defs');
+    function stops(id, opacity) {
+      var g = document.createElementNS(ns, 'linearGradient');
+      g.setAttribute('id', id);
+      g.setAttribute('x1', '0');
+      g.setAttribute('y1', '0');
+      g.setAttribute('x2', '0');
+      g.setAttribute('y2', '1');
+      var list = [];
+      for (var i = 0; i < 4; i++) {
+        var st = document.createElementNS(ns, 'stop');
+        st.setAttribute('offset', '0');
+        st.setAttribute('stop-color', '#3B82F6');
+        if (opacity) st.setAttribute('stop-opacity', opacity);
+        g.appendChild(st);
+        list.push(st);
+      }
+      defs.appendChild(g);
+      return list;
+    }
+    box.lineStops = stops('tideLine', 0);
+    box.fillStops = stops('tideFill', '0.16');
+    svg.appendChild(defs);
+    box.bands = document.createElementNS(ns, 'g');
+    box.bandRects = [];
+    for (var b = 0; b < 4; b++) {
+      var band = document.createElementNS(ns, 'rect');
+      band.setAttribute('class', 'band');
+      band.setAttribute('y', '0');
+      band.setAttribute('height', String(H));
+      band.setAttribute('visibility', 'hidden');
+      box.bands.appendChild(band);
+      box.bandRects.push(band);
+    }
+    svg.appendChild(box.bands);
     box.thr = node('line', {x1: 0, y1: 0, x2: width, y2: 0, 'class': 'thr'});
-    box.area = node('path', {'class': 'area'});
-    box.line = node('path', {'class': 'line'});
+    box.area = node('path', {'class': 'area', fill: 'url(#tideFill)'});
+    box.line = node('path', {'class': 'line', stroke: 'url(#tideLine)'});
     box.now = node('line', {x1: 0, y1: 0, x2: 0, y2: H, 'class': 'now'});
     card.appendChild(svg);
     box.chart = svg;
@@ -878,6 +1010,44 @@
     box.thr.setAttribute('y1', ty.toFixed(1));
     box.thr.setAttribute('y2', ty.toFixed(1));
     box.thr.setAttribute('visibility', on ? 'visible' : 'hidden');
+    // The two colours meet at the limit: above it the line is red, below it blue.
+    var at = Math.max(0, Math.min(1, ty / H)).toFixed(4);
+    var red = '#EF4444', blue = '#3B82F6';
+    var line = box.lineStops, fill = box.fillStops;
+    line[0].setAttribute('offset', '0');
+    line[0].setAttribute('stop-color', red);
+    line[1].setAttribute('offset', at);
+    line[1].setAttribute('stop-color', red);
+    line[2].setAttribute('offset', at);
+    line[2].setAttribute('stop-color', blue);
+    line[3].setAttribute('offset', '1');
+    line[3].setAttribute('stop-color', blue);
+    fill[0].setAttribute('offset', '0');
+    fill[0].setAttribute('stop-color', red);
+    fill[1].setAttribute('offset', at);
+    fill[1].setAttribute('stop-color', red);
+    fill[2].setAttribute('offset', at);
+    fill[2].setAttribute('stop-color', blue);
+    fill[3].setAttribute('offset', '1');
+    fill[3].setAttribute('stop-color', blue);
+  }
+
+  /** The green bands: the stretches of the day a buggy can be on the sand. */
+  function drawBands(box, spans, dayStart) {
+    for (var i = 0; i < box.bandRects.length; i++) {
+      var r = box.bandRects[i], sp = spans[i], on = false;
+      if (sp) {
+        var x1 = Math.max(0, (sp.start - dayStart) / 86400000 * box.width);
+        var x2 = Math.min(box.width, (sp.end - dayStart) / 86400000 * box.width);
+        if (x2 > x1) {
+          r.setAttribute('x', x1.toFixed(1));
+          r.setAttribute('width', (x2 - x1).toFixed(1));
+          r.setAttribute('visibility', 'visible');
+          on = true;
+        }
+      }
+      if (!on) r.setAttribute('visibility', 'hidden');
+    }
   }
 
   function placeDots(box, extremes, dayStart) {
@@ -924,10 +1094,13 @@
     }
     setText(box.extr, parts.join('   ·   '));
     var pts = Data.curve(start, end);
-    var psig = pts.length + '|' + (pts.length ? pts[0].t : 0) + '|' + (pts.length ? pts[pts.length - 1].t : 0);
+    var spans = Data.beachSpans(Prefs.beachLevel(), start, end), ssig = '';
+    for (var b = 0; b < spans.length; b++) ssig += spans[b].start + ':' + spans[b].end + ',';
+    var psig = pts.length + '|' + (pts.length ? pts[0].t : 0) + '|' + (pts.length ? pts[pts.length - 1].t : 0) + '|' + ssig;
     if (pts.length && psig !== box.ptsSig) {
       box.ptsSig = psig;
       drawCurve(box, pts, start);
+      drawBands(box, spans, start);
       box.extSig = '';
     }
     if (esig !== box.extSig) {
@@ -940,9 +1113,13 @@
       box.moon.lit.setAttribute('d', moonPath(m.phase, 7.4));
       box.moon.lit.setAttribute('transform', m.phase > 0.5 ? 'scale(-1 1)' : '');
       setText(box.moonText, moonName(m.phase) + ' · ' + Math.round(m.illumination * 100) + '%' +
-        (m.rise ? ' · ' + tr('nasce', 'rises', 'sale') + ' ' + Data.time(m.rise) : ''));
+        (moonWindow(m) ? ' · ' + moonWindow(m) : ''));
     }
     setText(box.source, shortSource(Data.tideLabel()));
+    // The credit holds the right end of the moon's line. With the weather panel beside it the tide panel is
+    // narrower than the line and the credit would touch the moon's hours, so there it goes.
+    var mode = box.width < 720 ? 'none' : '';
+    if (box.source.style.display !== mode) box.source.style.display = mode;
     // The cursor moves every five minutes; a tide is not a stopwatch.
     var bucket = Math.floor(now / 300000);
     if (has && bucket !== box.nowTick) {
@@ -1159,7 +1336,7 @@
   }
 
   function move(dx, dy) {
-    var tiles = document.querySelectorAll('#tiles .tile'), cardNodes = $('cards').children;
+    var tiles = document.querySelectorAll('#tiles .tile'), cardNodes = document.querySelectorAll('#cards .card');
     switch (st.zone) {
       case Z.SHELF:
         if (dx) st.shelf = Math.max(0, Math.min(shelf.length - 1, st.shelf + dx));
