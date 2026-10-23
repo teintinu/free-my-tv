@@ -88,7 +88,6 @@
     ['globoplay', /globoplay/, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
     ['spotify', /spotify/, /spotify/i, ['#1DB954', '#0F7A36']]
   ];
-  var MAX_SHELF = 8;
 
   function shelfKey(app) {
     for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
@@ -225,31 +224,45 @@
 
   var apps = [], shelf = [], others = [], inputs = [];
 
-  function pickShelf() {
-    var chosen = Prefs.shelf(), out = [];
-    if (chosen) {
-      for (var i = 0; i < chosen.length && out.length < MAX_SHELF; i++) {
-        for (var j = 0; j < apps.length; j++) if (apps[j].id === chosen[i]) out.push(apps[j]);
-      }
-    } else {
-      for (var s = 0; s < SHELF.length && out.length < MAX_SHELF; s++) {
-        for (var a = 0; a < apps.length; a++) {
-          if ((SHELF[s][1].test(apps[a].id) || SHELF[s][2].test(apps[a].title)) && out.indexOf(apps[a]) < 0) { out.push(apps[a]); break; }
-        }
-      }
-      if (!out.length) out = apps.slice(0, MAX_SHELF);
+  /** Where a brand sits in the shelf's own order: the tie-break for the apps nobody opened yet. */
+  function brandRank(app) {
+    for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return i;
+    return SHELF.length;
+  }
+
+  /**
+   * Every app the TV has, the most used first. The count comes from the launches made from here
+   * (Prefs.used); an app never opened keeps the brand order, then the name. The least used end up at the
+   * right end of the shelf, which scrolls to reach them.
+   */
+  function sortShelf() {
+    // Keep the focus on the same app when the order changes under it (the one just opened, say).
+    var keep = shelf[st.shelf] ? shelf[st.shelf].id : null;
+    var usage = Prefs.usage();
+    shelf = apps.slice().sort(function (a, b) {
+      var ua = usage[a.id] || {}, ub = usage[b.id] || {};
+      var na = ua.n || 0, nb = ub.n || 0;
+      if (na !== nb) return nb - na;
+      var ta = ua.t || 0, tb = ub.t || 0;
+      if (ta !== tb) return tb - ta;
+      var ba = brandRank(a), bb = brandRank(b);
+      if (ba !== bb) return ba - bb;
+      var x = a.title.toLowerCase(), y = b.title.toLowerCase();
+      return x < y ? -1 : x > y ? 1 : 0;
+    });
+    others = shelf;   // All Apps lists the same apps, in the same order
+    if (keep) {
+      for (var i = 0; i < shelf.length; i++) if (shelf[i].id === keep) { st.shelf = i; break; }
     }
-    shelf = out;
-    others = apps.filter(function (x) { return shelf.indexOf(x) < 0; });
   }
 
   // MARK: - Focus
 
-  var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit'};
-  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0};
+  var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings'};
+  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0};
   var cards = [];
 
-  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT; }
+  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS; }
 
   function updateFocus() {
     var i, list;
@@ -272,7 +285,7 @@
     var rows = Math.max(1, Math.ceil(others.length / 5)), r = Math.floor(st.grid / 5), first = Math.max(0, Math.min(rows - 3, r - 1));
     setTransform($('apps').lastChild, 'translateY(' + (-first * 239) + 'px)');
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
-    focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
+    updateShelfScroll();
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
   }
 
@@ -414,6 +427,7 @@
     if (!tideInfo) buildTideInfo();
     var box = $('tideinfo'), now = Date.now(), m = Data.moon(now);
     setClass(box, 'off', !Prefs.tide());
+    if (!Prefs.tide()) return;   // hidden: nothing to repaint, and the tick stays silent
     var sig = Math.round(m.phase * 32) + '|' + Math.round(m.illumination * 40) + '|' + (m.up ? 1 : 0);
     if (sig !== moonSig) {
       moonSig = sig;
@@ -433,13 +447,14 @@
     if (tideInfo.sep.style.display !== show) tideInfo.sep.style.display = show;
   }
 
-  /** The tide changes slowly: the corner and the panel are redrawn once a minute at most. */
+  /** The tide changes slowly: the corner is redrawn once a minute at most, and the panel only while it is open
+      (a hidden panel has no reason to wake the screen up). */
   function tickTide() {
     var bucket = Math.floor(Date.now() / 60000);
     if (bucket === tideTick) return;
     tideTick = bucket;
     renderTide();
-    updateTidePanel();
+    if (st.zone === Z.DRAWER) updateTidePanel();
   }
 
   // MARK: - Picks and background
@@ -582,30 +597,45 @@
     });
   }
 
+  // The shelf is a window on a row: fixed 16:9 tiles (224 × 126), six in view, the rest reached by scrolling
+  // right. With up to six apps the row is centred and nothing scrolls.
+  var SHELF_W = 1760, SHELF_PAD = 40, TILE_W = 224, TILE_GAP = 48;
+  var shelfPitch = TILE_W + TILE_GAP, shelfFirst = 0, shelfVisible = 1;
+
   function drawShelf() {
-    var n = shelf.length, gap = 48, pad = 40;
-    // 16:9 tiles, as on Android: never taller than 126, and the glass keeps its bottom edge.
-    var tw = Math.min(126 * 16 / 9, (1760 - Math.max(0, n - 1) * gap) / Math.max(1, n)), th = tw * 9 / 16;
-    var width = n * tw + Math.max(0, n - 1) * gap, left = (1920 - width) / 2;
-    var platter = $('platter');
-    platter.style.display = n ? '' : 'none';
-    platter.style.left = (left - pad) + 'px';
-    platter.style.width = (width + 2 * pad) + 'px';
-    platter.style.top = (814 + 126 - th) + 'px';
-    platter.style.height = (th + 2 * pad) + 'px';
-    $('tideinfo').style.right = (1920 - left - width) + 'px';
+    var n = shelf.length;
+    $('shelf').style.display = n ? '' : 'none';
+    if (!n) { shelfFirst = 0; shelfVisible = 1; return; }
+    var content = n * TILE_W + (n - 1) * TILE_GAP;
+    var pad = content <= SHELF_W - 2 * SHELF_PAD ? Math.round((SHELF_W - content) / 2) : SHELF_PAD;
+    shelfPitch = TILE_W + TILE_GAP;
+    shelfVisible = Math.max(1, Math.min(n, Math.floor((SHELF_W - 2 * SHELF_PAD + TILE_GAP) / shelfPitch)));
+    shelfFirst = 0;
     var tiles = $('tiles');
     tiles.innerHTML = '';
     for (var i = 0; i < n; i++) {
       var t = el('div', 'tile', tiles);
-      t.style.left = (left + i * (tw + gap)) + 'px';
-      t.style.top = (854 + 126 - th) + 'px';
-      t.style.width = tw + 'px';
-      t.style.height = th + 'px';
-      face(shelf[i], t, wordFit(shelf[i].title, tw, 30));
+      t.style.left = (pad + i * shelfPitch) + 'px';
+      t.style.top = '40px';
+      t.style.width = TILE_W + 'px';
+      t.style.height = '126px';
+      face(shelf[i], t, wordFit(shelf[i].title, TILE_W, 30));
       hover(t, Z.SHELF, i);
     }
-    st.shelf = Math.min(st.shelf, Math.max(0, n - 1));
+    st.shelf = Math.min(st.shelf, n - 1);
+    updateShelfScroll();
+  }
+
+  /** Slides the row so the focused tile is always in view — the least used apps are a few presses to the right. */
+  function updateShelfScroll() {
+    var n = shelf.length;
+    if (!n) return;
+    var first = shelfFirst;
+    if (st.shelf < first) first = st.shelf;
+    else if (st.shelf > first + shelfVisible - 1) first = st.shelf - shelfVisible + 1;
+    first = Math.max(0, Math.min(Math.max(0, n - shelfVisible), first));
+    shelfFirst = first;
+    setTransform($('tiles'), 'translateX(' + (-first * shelfPitch) + 'px)');
   }
 
   // MARK: - Drawer
@@ -884,6 +914,7 @@
 
   function openDrawer() {
     if (!drawerItems.length) return;
+    renderPanels();   // the weather and the tide only age while they are out of sight
     var tiles = $('tiles').children;
     st.zone = Z.DRAWER;
     st.drawer = Math.min(drawerItems.length - 1, nearest(document.querySelectorAll('#drawer .key'), centerX(tiles[st.shelf])));
@@ -933,7 +964,6 @@
   function closeSheets() {
     setClass($('apps'), 'open', false);
     setClass($('settings'), 'open', false);
-    setClass($('shelfedit'), 'open', false);
     st.zone = Z.SHELF;
     updateFocus();
   }
@@ -962,7 +992,6 @@
           renderPanels();
           renderTide();
         }},
-      {label: tr('Prateleira', 'Shelf', 'Estante'), value: '›', step: function (d) { if (d >= 0) openShelfEdit(); }},
       {label: tr('Ajustes da TV', 'TV Settings', 'Ajustes del TV'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }}
     ];
     return rows;
@@ -1032,98 +1061,12 @@
     updateFocus();
   }
 
-  // MARK: - Shelf editor: which apps, in what order
-
-  function ordinal(n) {
-    if (I18N.lang === 'ru') return n + '-е';
-    if (I18N.lang === 'de') return n + '.';
-    if (I18N.lang !== 'en') return n + 'º';
-    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  }
-
-  function editList() {
-    var ids = shelf.map(function (a) { return a.id; });
-    return {ids: ids, rows: apps.slice().sort(function (a, b) {
-      var ia = ids.indexOf(a.id), ib = ids.indexOf(b.id);
-      if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-      return a.title.toLowerCase() < b.title.toLowerCase() ? -1 : 1;
-    })};
-  }
-
-  var editBuild = null;
-
-  function renderShelfEdit() {
-    var box = $('shelfedit').firstChild, e = editList();
-    // Same in-place treatment as the settings sheet: the rows are built once.
-    if (!editBuild || editBuild.rows.length !== e.rows.length) buildShelfEdit(box, e.rows);
-    setText(editBuild.title, tr('Prateleira', 'Shelf', 'Estante'));
-    for (var i = 0; i < e.rows.length; i++) {
-      var a = e.rows[i], at = e.ids.indexOf(a.id), b = editBuild.rows[i];
-      setText(b.label, a.title);
-      setText(b.vtext, at >= 0 ? tr('Na prateleira · ', 'On · ', 'En el estante · ') + ordinal(at + 1) : tr('Fora', 'Off', 'Fuera'));
-    }
-    updateFocus();
-  }
-
-  function buildShelfEdit(box, rows) {
-    box.innerHTML = '';
-    var title = el('div', 'title', box);
-    sym('apps', title);
-    var titleText = document.createTextNode('');
-    title.appendChild(titleText);
-    var list = el('div', 'list', box), holder = el('div', 'rows', list);
-    list.style.height = Math.min(rows.length, 7) * 78 + 'px';
-    var built = {title: titleText, rows: []};
-    for (var i = 0; i < rows.length; i++) {
-      var row = el('div', 'row', holder);
-      var label = document.createTextNode('');
-      row.appendChild(label);
-      var value = el('span', 'value', row);
-      var vtext = document.createTextNode('');
-      value.appendChild(vtext);
-      hover(row, Z.EDIT, i);
-      built.rows.push({label: label, vtext: vtext});
-    }
-    el('div', 'hint', box, tr('OK põe ou tira · ← → mudam a ordem', 'OK adds or removes · ← → change the order', 'OK pone o quita · ← → cambian el orden'));
-    editBuild = built;
-  }
-
-  function openShelfEdit() {
-    setClass($('settings'), 'open', false);
-    st.zone = Z.EDIT;
-    st.edit = 0;
-    renderShelfEdit();
-    setClass($('shelfedit'), 'open', true);
-    updateFocus();
-  }
-
-  function editShelf(dx) {
-    var e = editList(), app = e.rows[st.edit];
-    if (!app) return;
-    var ids = e.ids.slice(), at = ids.indexOf(app.id);
-    if (dx === 0) {
-      if (at >= 0) ids.splice(at, 1);
-      else if (ids.length < MAX_SHELF) ids.push(app.id);
-      else { toast(tr('A prateleira cabe até ' + MAX_SHELF + ' apps.', 'The shelf holds up to ' + MAX_SHELF + ' apps.', 'El estante tiene hasta ' + MAX_SHELF + ' apps.')); return; }
-    } else {
-      if (at < 0) return;
-      var to = Math.max(0, Math.min(ids.length - 1, at + dx));
-      ids.splice(at, 1);
-      ids.splice(to, 0, app.id);
-    }
-    Prefs.set('shelf', ids);
-    pickShelf();
-    renderShelf();
-    var again = editList();
-    for (var i = 0; i < again.rows.length; i++) if (again.rows[i].id === app.id) st.edit = i;
-    renderShelfEdit();
-  }
-
   // MARK: - Opening things
 
   function launcher(id, name) {
     return function () {
+      // Counted at the touch, not in the reply: the app opens over this one and the callback may never come back.
+      Prefs.used(id);
       TV.launch(id, null, function (ok) {
         if (!ok) toast(tr('Não deu para abrir ', "Couldn't open ", 'No se pudo abrir ') + (name || id));
       });
@@ -1164,9 +1107,6 @@
         return;
       case Z.SETTINGS:
         if (rowsNow[st.row]) { rowsNow[st.row].step(1); if (st.zone === Z.SETTINGS) renderSettings(); }
-        return;
-      case Z.EDIT:
-        editShelf(0);
         return;
     }
   }
@@ -1217,16 +1157,11 @@
           if (r.value !== '›') { r.step(dx); renderSettings(); }
         }
         break;
-      case Z.EDIT:
-        if (dy) st.edit = Math.max(0, Math.min(apps.length - 1, st.edit + dy));
-        else if (dx) editShelf(dx);
-        break;
     }
     updateFocus();
   }
 
   function back() {
-    if (st.zone === Z.EDIT) { setClass($('shelfedit'), 'open', false); openSettings(); st.row = rowsNow.length - 2; updateFocus(); return; }
     if (sheetOpen()) { closeSheets(); return; }
     if (st.zone === Z.DRAWER) { closeDrawer(); return; }
     if (st.zone !== Z.SHELF && shelf.length) { st.zone = Z.SHELF; updateFocus(); return; }
@@ -1236,7 +1171,7 @@
   /** The pointer focuses what it's over (the Magic Remote, or a mouse when previewing). */
   function hover(node, zone, index) {
     node.onmouseover = function () {
-      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT))) return;
+      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
       if (zone === Z.SHELF && st.zone === Z.DRAWER) closeDrawer();
@@ -1247,7 +1182,6 @@
       else if (zone === Z.DRAWER) st.drawer = index;
       else if (zone === Z.APPS) st.grid = index;
       else if (zone === Z.SETTINGS) st.row = index;
-      else if (zone === Z.EDIT) st.edit = index;
       updateFocus();
     };
     node.onclick = function () { node.onmouseover(); activate(); };
@@ -1442,7 +1376,7 @@
     TV.apps(function (list) {
       apps = list;
       Data.setApps(apps);
-      pickShelf();
+      sortShelf();
       TV.inputs(function (list2) {
         inputs = list2;
         if (done) done();

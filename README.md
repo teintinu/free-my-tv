@@ -18,13 +18,13 @@ Open source. Built with Claude Code. One button to undo.
 ## What you get
 
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
-- **Your apps, front and center.** The streaming apps you actually use, on a glass shelf. Pick them and their order right on the TV.
+- **Your apps, front and center.** A glass shelf with the apps you actually use. On Google TV you pick them and their order right on the TV; on LG and Samsung every app the TV has is there, the most used first, and the shelf slides right to the ones you open less.
 - **Trending, not sponsored.** Three fresh picks every hour from what's trending this week and the latest releases, only from apps you already have. Movies and Shows get their own tabs.
 - **Weather, tide and moon, one press away.** The hour-by-hour forecast, sunrise and sunset, the moon's phase and the day's tide — with the window when the beach is low enough for a buggy, and when it is time to leave it. (On Google TV the drawer shows market prices instead.)
 - **Light by day, dark by night.** It follows your city's real sunset, the way your phone does.
 - **A screensaver to match.** Full-screen photos of the picks with a big glass clock.
 - **Fast.** 60 fps, every frame in 16.6 ms, on the TV's own chip. The home screen uses 96 MB of memory instead of 242 MB (−60%).<br><sub>Measured on a 98″ TCL Google TV running Android 14.</sub>
-- **Set up on the TV.** Language, your city, temperature, theme, the weather and tide cards, the tide limit for the beach, and the apps on the shelf, in Free My TV's own settings. (On Google TV: the prices card and which coins.)
+- **Set up on the TV.** Language, your city, temperature, theme, the weather and tide cards, and the tide limit for the beach, in Free My TV's own settings. (On Google TV: the apps on the shelf, the prices card and which coins.)
 - **Safe.** No root. Nothing is uninstalled. One button brings back the factory home screen.
 
 ## Install
@@ -67,7 +67,7 @@ About ten minutes. You need a Google TV or Android TV (Android 8 or newer) and a
 
 ## LG TVs (webOS)
 
-The same home screen as an LG app: the picks, the glass shelf with your apps, the drawer with inputs, weather and prices, day and night, Home Settings and the shelf editor. It installs through LG's own Developer Mode, with nothing rooted or changed on the TV. LG's home screen stays where it is, and Free My TV is one press of a number key away.
+The same home screen as an LG app: the picks, the glass shelf with every app on the TV (ordered by use, sliding right to the least used), the drawer with inputs, weather, tide and moon, day and night, and Home Settings. It installs through LG's own Developer Mode, with nothing rooted or changed on the TV. LG's home screen stays where it is, and Free My TV is one press of a number key away.
 
 You need an LG TV (webOS 3 or newer) and a computer on the same Wi-Fi, with Python 3.
 
@@ -89,7 +89,7 @@ Developer Mode lasts about 40 days: open the Developer Mode app now and then and
 
 ## Samsung TVs (Tizen)
 
-The same home screen as a Samsung app, with everything the LG one has: the picks, the shelf, the drawer with the inputs, the weather and the prices, day and night, and its own settings. It installs through Samsung's own Developer Mode, with nothing rooted or changed on the TV, and Samsung's home screen stays where it is.
+The same home screen as a Samsung app, with everything the LG one has: the picks, the shelf with every app (ordered by use), the drawer with the inputs, the weather, the tide and the moon, day and night, and its own settings. It installs through Samsung's own Developer Mode, with nothing rooted or changed on the TV, and Samsung's home screen stays where it is.
 
 You need a Samsung TV from 2017 or newer (Tizen 3+) and a computer on the same Wi-Fi.
 

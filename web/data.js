@@ -56,7 +56,18 @@ var Prefs = (function () {
       if (v !== null && !isNaN(v)) return +v;
       return CONFIG.tideLevel !== undefined && CONFIG.tideLevel !== '' && !isNaN(CONFIG.tideLevel) ? +CONFIG.tideLevel : 0.3;
     },
-    shelf: function () { return pick('shelf', null); },
+    /** How often each app was opened from here, and when: the shelf goes from the most to the least used. */
+    usage: function () { return pick('usage', {}); },
+    used: function (id) {
+      if (!id) return;
+      var u = pick('usage', {});
+      var e = u[id] || (u[id] = {n: 0, t: 0});
+      e.n += 1;
+      e.t = Date.now();
+      v.usage = u;
+      save();
+      this.version++;
+    },
     set: function (name, value) { v[name] = value; save(); this.version++; }
   };
 })();

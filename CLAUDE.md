@@ -232,7 +232,12 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   network) and the tide (the Tábua das Marés through the association's `/api/passeio` when `tide_api_key` is set,
   Open-Meteo Marine when it is not): the day's curve, the highs and lows, and the window when the water is below
   `tide_beach_level` — "praia até HH:MM" (go in, leave by then) or "praia abre HH:MM" (stay off). The Android app
-  still shows the crypto quotes: a port of the tide there remains.
+  still shows the crypto quotes and its own shelf (eight apps, picked and ordered on the TV): a port of the
+  tide and of the automatic shelf remains.
+  The web shelf lists every app the TV exposes (`listLaunchPoints`; without root there is no way to see the ones
+  LG keeps out of the launcher), ordered by how often it was opened from here (`Prefs.usage`, counted in
+  `launcher()`: launches made elsewhere are invisible), the least used at the right, and the row slides with
+  `transform` inside a 1760 px window (6 tiles in view, 224 × 126). The manual shelf editor was removed with it.
   Text: `tr(pt, en, es)`, with the German and Russian in `web/strings.js` (keyed by the English). Built without a city (`--generic`), `web/zones.js`
   (`tools/make_zones.py`, from the tz database) turns the TV's time zone into the city and the region.
   `tools/webapp.py` is what both builds share. Preview: `python3 webos/build.py --preview` (or `tizen/build.py`), then
