@@ -635,3 +635,80 @@ html.night, body.night { background: #0B0B0D; }
   -webkit-transition: -webkit-transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
   transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
+
+/* The shelf's turn on the remote: a light ring around the glass bar. It is its own node so only
+   opacity changes when the focus arrives and leaves. */
+#shelfring {
+  position: absolute;
+  left: 80px;
+  top: 814px;
+  width: 1760px;
+  height: 206px;
+  border-radius: 62px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.18), 0 14px 38px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  -webkit-transition: opacity 0.25s;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+#shelfring.on { opacity: 1; }
+.night #shelfring { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.62), 0 0 34px rgba(255, 255, 255, 0.16); }
+
+/* The logos are white marks: a little larger than a full-color app icon, so they read from the sofa. */
+.tile img.logo { max-width: 78%; max-height: 64%; }
+
+/* A tile with a mark: the mark above and the name under it, both always visible, with room to
+   breathe (the name keeps its own line instead of sitting under the logo). */
+.tile.haslogo img {
+  left: 50%;
+  top: 14px;
+  max-width: 62%;
+  max-height: 56px;
+  -webkit-transform: translateX(-50%);
+  transform: translateX(-50%);
+}
+.tile.haslogo .word {
+  top: auto;
+  bottom: 9px;
+  margin-top: 0;
+  height: 26px;
+  line-height: 26px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+.cell .face.haslogo img {
+  left: 50%;
+  top: 24px;
+  max-width: 56%;
+  max-height: 72px;
+  -webkit-transform: translateX(-50%);
+  transform: translateX(-50%);
+}
+.cell .face.haslogo .word {
+  top: auto;
+  bottom: 12px;
+  margin-top: 0;
+  height: 30px;
+  line-height: 30px;
+  color: #FFF;
+}
+
+/* The focused tile: a white ring (plus a dark edge, for light backgrounds) around it, so the eye
+   finds the focus at once; the growth stays small so the name never leaves the tile. */
+.tile.focus {
+  -webkit-transform: scale(1.12);
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px #FFF, 0 0 0 6px rgba(0, 0, 0, 0.3), 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+.cell.focus .face {
+  -webkit-transform: scale(1.06);
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px #FFF, 0 0 0 6px rgba(0, 0, 0, 0.35), 0 16px 34px rgba(0, 0, 0, 0.55);
+}
+
+/* The night theme used to swap the focused tile's shadow for a deeper one (a more specific
+   selector), which swallowed the ring: it now keeps the ring too. */
+.night .tile.focus {
+  box-shadow: 0 0 0 3px #FFF, 0 0 0 6px rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.6);
+}

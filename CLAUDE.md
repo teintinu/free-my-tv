@@ -238,6 +238,12 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   LG keeps out of the launcher), ordered by how often it was opened from here (`Prefs.usage`, counted in
   `launcher()`: launches made elsewhere are invisible), the least used at the right, and the row slides with
   `transform` inside a 1760 px window (6 tiles in view, 224 × 126). The manual shelf editor was removed with it.
+  Where LG denies `listLaunchPoints` to Developer Mode apps (this fork's TV does, on webOS 4), `knownApps()` asks
+  `getAppLoadStatus` for the ids of `KNOWN` (in `web/tv.js`: the streaming apps and LG's own Discovery/Channels,
+  Music, Photo & Video and Settings) — an id outside that list only appears through the remote control API (SSAP,
+  which the person pairs once). That list has no icons at all, so `face()` falls back to the white logos in
+  `web/icons/logo-*.svg` (Simple Icons, CC0; the Disney+ wordmark from Wikimedia) and to the Material symbols for
+  LG's apps. The shelf bar lights up with a ring (`#shelfring`, opacity only) while the shelf has the focus.
   Text: `tr(pt, en, es)`, with the German and Russian in `web/strings.js` (keyed by the English). Built without a city (`--generic`), `web/zones.js`
   (`tools/make_zones.py`, from the tz database) turns the TV's time zone into the city and the region.
   `tools/webapp.py` is what both builds share. Preview: `python3 webos/build.py --preview` (or `tizen/build.py`), then

@@ -244,7 +244,7 @@ No accounts, no analytics, no tracking. The app talks to TMDB, Open-Meteo (with 
 - This product uses the TMDB API but is not endorsed or certified by [TMDB](https://www.themoviedb.org/).
 - Links to the titles in the streaming apps by [Watchmode](https://api.watchmode.com/).
 - Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0); the tide without a key comes from its marine model. Tide tables from the [Tábua das Marés](https://www.marinha.mil.br/chm/tabuas-de-mare) (DHN/IBGE). Prices from the [Binance](https://www.binance.com/) public API (Google TV).
-- Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Font: [Inter](https://rsms.me/inter/) (SIL OFL 1.1). Coin logos: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) (CC0). Samsung app logos: [Simple Icons](https://simpleicons.org) (CC0).
+- Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Font: [Inter](https://rsms.me/inter/) (SIL OFL 1.1). Coin logos: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) (CC0). Brand marks on the shelf: [Simple Icons](https://simpleicons.org) (CC0) and the Disney+ wordmark from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Disney%2B_logo.svg).
 - Not affiliated with Google, TCL, LG, Samsung or any streaming service. App names and logos belong to their owners.
 
 ## License

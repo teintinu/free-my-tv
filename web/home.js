@@ -106,6 +106,37 @@
     return Math.max(18, Math.min(max, Math.floor(width * 0.8 / (Math.max(4, title.length) * 0.56))));
   }
 
+  // LG gives a Developer Mode app no icons in its app list (and hides most launch points), so the
+  // shelf draws the marks itself: white logos on the brand gradient (Simple Icons, CC0; the Disney+
+  // wordmark from Wikimedia Commons) and the Material symbols the TV's own apps deserve.
+  var LOGOS = [
+    [/^netflix$/, /netflix/i, 'icons/logo-netflix.svg'],
+    [/youtube/, /^youtube$/i, 'icons/logo-youtube.svg'],
+    [/^amazon$/, /prime video|amazon/i, 'icons/logo-prime.png'],
+    [/disney/, /disney/i, 'icons/logo-disney.svg'],
+    [/hbo|wbd/, /^(hbo )?max$|hbo max/i, 'icons/logo-hbomax.svg'],
+    [/appletv|apple\.tv/, /apple tv/i, 'icons/logo-appletv.svg'],
+    [/spotify/, /spotify/i, 'icons/logo-spotify.svg'],
+    [/cdp-30/, /plex/i, 'icons/logo-plex.svg'],
+    [/crunchyroll/, /crunchyroll/i, 'icons/logo-crunchyroll.svg'],
+    [/paramount|cbs/, /paramount/i, 'icons/logo-paramountplus.svg'],
+    [/twitch/, /twitch/i, 'icons/logo-twitch.svg'],
+    [/deezer/, /deezer/i, 'icons/logo-deezer.svg'],
+    [/discovery/, /lg channels/i, 'symbols/live_tv.png'],
+    [/app\.music$/, /music/i, 'icons/logo-music.svg'],
+    [/photovideo/, /photo/i, 'icons/logo-photos.svg'],
+    [/settings$/, /settings/i, 'symbols/settings.png'],
+    [/browser/, /browser/i, 'icons/logo-globe.svg']
+  ];
+
+  function logoFor(app) {
+    for (var i = 0; i < LOGOS.length; i++) if (LOGOS[i][0].test(app.id) || LOGOS[i][1].test(app.title)) return LOGOS[i][2];
+    return '';
+  }
+
+  /** The mark on a tile: the TV's own icon when there is one, our logo otherwise (or nothing: the name shows). */
+  function iconFor(app) { return app.icon || logoFor(app); }
+
   /** An app's face: its own icon on its brand color (or its name, when the icon can't be read). */
   // --- Images: load and decode before the view is swapped -------------------
   // On this TV (webOS 4.x, Chromium 53) a background-image paints only once the
@@ -188,7 +219,7 @@
 
   function iconUrls() {
     var urls = [];
-    for (var i = 0; i < apps.length; i++) if (apps[i].icon) urls.push(apps[i].icon);
+    for (var i = 0; i < apps.length; i++) urls.push(iconFor(apps[i]));
     return urls;
   }
 
@@ -203,22 +234,29 @@
     return urls;
   }
 
-  function face(app, box, wordSize) {
+  /** An app's tile: the mark on top and the name under it, always both (the name alone when there is no mark).
+      `nameSize` is the size of that name when there is a mark above it. */
+  function face(app, box, wordSize, nameSize) {
     var k = shelfKey(app);
     var top = k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
     var bottom = k ? k[3][1] : app.color ? darken(app.color, 0.62) : '#161618';
     box.style.background = '-webkit-linear-gradient(top, ' + top + ', ' + bottom + ')';
     box.style.background = 'linear-gradient(' + top + ', ' + bottom + ')';
     var word = el('div', 'word', box, app.title);
-    if (wordSize) word.style.fontSize = wordSize + 'px';
-    if (app.icon) {
-      var img = el('img', '', box);
-      // An icon already loaded is hidden at once; one that isn't keeps the name
-      // until it loads, so a tile is never an empty box.
-      if (preloaded[app.icon] === true) word.style.visibility = 'hidden';
-      img.onload = function () { word.style.visibility = 'hidden'; };
-      img.onerror = function () { img.parentNode.removeChild(img); word.style.visibility = ''; };
-      img.src = app.icon;
+    var icon = iconFor(app);
+    if (icon) {
+      setClass(box, 'haslogo', true);
+      word.style.fontSize = nameSize + 'px';
+      var img = el('img', logoFor(app) ? 'logo' : '', box);
+      // A mark that cannot be read (the TV's icon sometimes is not a file) leaves the name alone, centred.
+      img.onerror = function () {
+        img.parentNode.removeChild(img);
+        setClass(box, 'haslogo', false);
+        word.style.fontSize = wordSize + 'px';
+      };
+      img.src = icon;
+    } else if (wordSize) {
+      word.style.fontSize = wordSize + 'px';
     }
   }
 
@@ -247,8 +285,11 @@
       if (ta !== tb) return tb - ta;
       var ba = brandRank(a), bb = brandRank(b);
       if (ba !== bb) return ba - bb;
-      var x = a.title.toLowerCase(), y = b.title.toLowerCase();
-      return x < y ? -1 : x > y ? 1 : 0;
+      // The TV's own language: "Música" belongs between "LG Channels" and "Plex", not after "Web Browser".
+      try { return a.title.localeCompare(b.title, I18N.locale()); } catch (e) {
+        var x = a.title.toLowerCase(), y = b.title.toLowerCase();
+        return x < y ? -1 : x > y ? 1 : 0;
+      }
     });
     others = shelf;   // All Apps lists the same apps, in the same order
     if (keep) {
@@ -286,6 +327,7 @@
     setTransform($('apps').lastChild, 'translateY(' + (-first * 239) + 'px)');
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
     updateShelfScroll();
+    setClass($('shelfring'), 'on', st.zone === Z.SHELF);
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
   }
 
@@ -586,7 +628,8 @@
     // (they come from memory in every normal run, so this is synchronous).
     var urls = [], missing = false;
     for (var u = 0; u < shelf.length; u++) {
-      if (shelf[u].icon) { urls.push(shelf[u].icon); if (preloaded[shelf[u].icon] === undefined) missing = true; }
+      var icon = iconFor(shelf[u]);
+      if (icon) { urls.push(icon); if (preloaded[icon] === undefined) missing = true; }
     }
     if (!missing) { shelfSig = sig; drawShelf(); return; }
     var gen = ++shelfGen;
@@ -619,7 +662,7 @@
       t.style.top = '40px';
       t.style.width = TILE_W + 'px';
       t.style.height = '126px';
-      face(shelf[i], t, wordFit(shelf[i].title, TILE_W, 30));
+      face(shelf[i], t, wordFit(shelf[i].title, TILE_W, 30), 20);
       hover(t, Z.SHELF, i);
     }
     st.shelf = Math.min(st.shelf, n - 1);
@@ -947,7 +990,7 @@
       var r = Math.floor(i / 5), c = i % 5, cell = el('div', 'cell', grid);
       cell.style.left = (130 + c * 340) + 'px';
       cell.style.top = (196 + r * 239) + 'px';
-      face(others[i], el('div', 'face', cell), wordFit(others[i].title, 300, 34));
+      face(others[i], el('div', 'face', cell), wordFit(others[i].title, 300, 34), 22);
       el('div', 'label', cell, others[i].title);
       hover(cell, Z.APPS, i);
     }

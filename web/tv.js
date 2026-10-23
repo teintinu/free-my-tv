@@ -84,7 +84,7 @@ var TV = (function () {
   ];
 
   // Not shown among LG's apps: the inputs above, LG's own home and launchers.
-  var HIDDEN = /^(com\.webos\.app\.(livetv|hdmi\d|home|homeconnect|discovery|launcher)|com\.webos\.app\.inputpicker)$/;
+  var HIDDEN = /^(com\.webos\.app\.(livetv|hdmi\d|home|homeconnect|launcher)|com\.webos\.app\.inputpicker)$/;
 
   // Not shown among Samsung's apps: Smart Hub's own pieces, the platform's tools and players (but its browser and
   // Netflix, which live there too), services, keyboards and ad players. The rest is what Smart Hub shows.
@@ -144,8 +144,18 @@ var TV = (function () {
     ['com.disney.disneyplus-prod', 'Disney+'], ['com.wbd.stream', 'HBO Max'], ['com.hbo.hbomax', 'Max'],
     ['com.apple.appletv', 'Apple TV'], ['hulu', 'Hulu'], ['com.peacock.tv', 'Peacock'], ['com.nfl.app', 'NFL'],
     ['globoplaywebos', 'Globoplay'], ['spotify-beehive', 'Spotify'], ['tv.twitch.tv.starshot.lg', 'Twitch'],
-    ['cdp-30', 'Plex'], ['com.crunchyroll.webapp', 'Crunchyroll'], ['com.webos.app.browser', 'Web Browser']
+    ['cdp-30', 'Plex'], ['com.crunchyroll.webapp', 'Crunchyroll'], ['com.webos.app.browser', 'Web Browser'],
+    ['com.webos.app.discovery', 'LG Channels'], ['com.webos.app.music', 'Music'],
+    ['com.webos.app.photovideo', 'Photo & Video'], ['com.palm.app.settings', 'Settings']
   ];
+
+  /** The TV's own apps get the TV's language; the rest keep their names. */
+  function knownTitle(id, title) {
+    if (id === 'com.webos.app.music') return tr('Música', 'Music', 'Música');
+    if (id === 'com.webos.app.photovideo') return tr('Fotos e vídeos', 'Photo & Video', 'Fotos y vídeos');
+    if (id === 'com.palm.app.settings') return tr('Ajustes', 'Settings', 'Ajustes');
+    return title;
+  }
 
   function knownApps(done) {
     var found = [], left = KNOWN.length, sent = false;
@@ -157,7 +167,7 @@ var TV = (function () {
     setTimeout(finish, 5000);   // an id that never answers doesn't hold the rest
     KNOWN.forEach(function (k, i) {
       luna('luna://com.webos.applicationManager/getAppLoadStatus', {appId: k[0]}, function (res) {
-        if (res && res.exist) found[i] = {id: k[0], title: k[1], icon: '', color: ''};
+        if (res && res.exist) found[i] = {id: k[0], title: knownTitle(k[0], k[1]), icon: '', color: ''};
         if (--left === 0) finish();
       });
     });
