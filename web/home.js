@@ -142,7 +142,13 @@
       owns the box may stop it: the focus moves through the row, and every other tile is told "off" after it. */
   function playFace(node, on) {
     if (!node.__gif) return;
-    if (!on) { if (animOwner === node) stopAnim(); return; }
+    if (!on) {
+      node.__played = false;
+      if (animOwner === node) stopAnim();
+      return;
+    }
+    if (node.__played) return;   // already played since it took the focus: don't restart it
+    node.__played = true;
     var box = animLayer();
     animOwner = node;
     clearTimeout(animTimer);
@@ -599,29 +605,30 @@
     });
   }
 
-  // The picks: a wide card for the first one, and beside it a row that slides to the rest — every pick of the
-  // hour is reachable with the right arrow, and the row is a window (overflow hidden) so the cards that went out
-  // of it don't sit on top of the hero. Its padding leaves room for the focused card's shadow.
-  var ROW_LEFT = 1120, ROW_PAD = 40, CARD_W = 320, CARD_GAP = 40, CARD_PITCH = CARD_W + CARD_GAP;
-  var rowFirst = 0;
+  // The picks are one strip, not a wide card beside a row: the hero is the first card of the same sliding line, so
+  // going right carries it out to the left and the next picks in from the right. The strip is a window (overflow
+  // hidden) with a margin inside it, so the focused card — which grows 5% — is never cut by the edges.
+  var ROW_W = 1880, ROW_LEFT = 40, ROW_RIGHT = 80, HERO_W = 1040, CARD_W = 320, CARD_GAP = 40;
+  var CARD_PITCH = CARD_W + CARD_GAP, rowScroll = 0;
+
+  /** Where a pick sits in the strip: the first one wide, the rest side by side after it. */
+  function cardGeom(i) {
+    return i === 0 ? {left: ROW_LEFT, width: HERO_W}
+      : {left: ROW_LEFT + HERO_W + CARD_GAP + (i - 1) * CARD_PITCH, width: CARD_W};
+  }
 
   function swapCards(list, holder) {
     cards = list;
     holder.innerHTML = '';
     var win = el('div', 'rowwin', holder), row = el('div', 'row', win);
-    rowFirst = 0;
+    rowScroll = 0;
     for (var c = 0; c < list.length; c++) {
-      var p = list[c], hero = c === 0;
-      var card = el('div', 'card' + (hero ? ' hero' : ''), hero ? holder : row);
-      if (hero) {
-        card.style.left = '80px';
-        card.style.width = '1040px';
-      } else {
-        card.style.left = (ROW_PAD + (c - 1) * CARD_PITCH) + 'px';
-        card.style.width = CARD_W + 'px';
-      }
+      var p = list[c], hero = c === 0, geom = cardGeom(c);
+      var card = el('div', 'card' + (hero ? ' hero' : ''), row);
+      card.style.left = geom.left + 'px';
+      card.style.width = geom.width + 'px';
       var img = el('div', 'img', card);
-      // 1040px wide for the hero card, 320px for the row: matching the slot keeps the download honest
+      // 1040px wide for the hero card, 320px for the rest: matching the slot keeps the download honest
       // (w780 for a 320px slot was 6x the bytes).
       img.style.backgroundImage = 'url(' + Data.image(p.backdrop, hero ? 'w1280' : 'w300') + ')';
       el('div', 'name', card, p.title);
@@ -636,18 +643,37 @@
     revealWhenPainted();
   }
 
-  /** Slides the row so the focused pick is in view; the hero on the left never moves. */
+  /** Slides the strip the least it can so the focused pick is whole and inside the window's margin. */
   function updateCardScroll() {
     var row = $('cards').querySelector('.row');
     if (!row) return;
-    var n = row.children.length, i = st.card - 1;
-    if (i < 0) i = 0;
-    var first = rowFirst;
-    if (i < first) first = i;
-    else if (i > first + 1) first = i - 1;
-    first = Math.max(0, Math.min(Math.max(0, n - 2), first));
-    rowFirst = first;
-    setTransform(row, 'translateX(' + (-first * CARD_PITCH) + 'px)');
+    var n = row.children.length;
+    if (!n) return;
+    var g = cardGeom(Math.min(st.card, n - 1)), last = cardGeom(n - 1);
+    var max = Math.max(0, last.left + last.width - (ROW_W - ROW_RIGHT));
+    var s = rowScroll;
+    if (g.left - s < ROW_LEFT) s = g.left - ROW_LEFT;
+    else if (g.left + g.width - s > ROW_W - ROW_RIGHT) s = g.left + g.width - (ROW_W - ROW_RIGHT);
+    s = Math.max(0, Math.min(max, s));
+    rowScroll = s;
+    setTransform(row, 'translateX(' + (-s) + 'px)');
+  }
+
+  // Left alone, the picks move on their own: one card every ten seconds, all the way round and back to the first.
+  // Any key (or the pointer) puts the next step ten seconds away, and the drawer and the sheets hold it.
+  var AUTO_CARD_MS = 10000, autoCardTimer = 0;
+
+  function restartAutoCard() {
+    clearTimeout(autoCardTimer);
+    autoCardTimer = setTimeout(autoCard, AUTO_CARD_MS);
+  }
+
+  function autoCard() {
+    if (!saverOn && !sheetOpen() && st.zone !== Z.DRAWER && !document.hidden && cards.length > 1) {
+      st.card = (st.card + 1) % cards.length;
+      updateFocus();
+    }
+    restartAutoCard();
   }
 
   var bgUrl = null, bgFront = 'bgA';
@@ -1499,6 +1525,7 @@
 
   function poke() {
     idleAt = Date.now();
+    restartAutoCard();
     if (saverOn) { hideSaver(); return true; }
     return false;
   }
@@ -1654,6 +1681,7 @@
       Data.refresh();
     }, 2000);
   });
+  restartAutoCard();
   setInterval(function () {
     renderClock();
     checkNight();

@@ -702,13 +702,13 @@ html.night, body.night { background: #0B0B0D; }
 }
 #tiles .animbox img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 
-/* The picks' row: a window on the hour's other picks, so the right arrow reaches all of them. Its padding
-   leaves room for the focused card's shadow. */
+/* The picks are one strip inside a window: the wide first card and the rest slide together, and the margin the
+   cards keep from the window's edges leaves room for the focused card's shadow. */
 #cards .rowwin {
   position: absolute;
-  left: 1120px;
+  left: 40px;
   top: 236px;
-  width: 728px;
+  width: 1880px;
   height: 566px;
   overflow: hidden;
 }

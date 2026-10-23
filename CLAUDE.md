@@ -228,6 +228,14 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   (`SAMSUNG_TITLES`); and Tizen 3 answers no "settings" app control, so TV Settings opens `org.tizen.menu`.
   `web/home.js` follows `HomeView`'s layout and behavior, so a design change on
   Android belongs there too — except the tide and the moon (see below), which so far exist only in the web app.
+  The picks are one strip in a window (`#cards .rowwin`, 40 px from the screen's edges, `overflow: hidden`): the wide
+  card is its first card and slides out to the left with the arrow, the rest follow it (`cardGeom`, 1040 px then
+  320 px with a 40 px gap). `updateCardScroll` moves the strip the least it can to keep the focused pick whole inside
+  the margins, so the strip only starts moving when the picks no longer fit — and `autoCard` walks it one card every
+  ten seconds while the remote is idle (any key restarts the wait; the drawer, the sheets and the screensaver hold it).
+  The idle home therefore has a little motion of its own: a 0.35 s `transform` on the strip every ten seconds (60 fps,
+  measured on the TV), instead of the 0 DOM mutations it had before. A shelf tile's GIF plays once per focus: `playFace`
+  marks the tile (`__played`) so an updateFocus that doesn't move the focus (the strip advancing, say) can't replay it.
   The top corner and the drawer show the moon (phase with a "Lua" in front of it, lit part, and the hours it is
   above the horizon — `rise` and `set` from `web/data.js`, no network) and the tide (the Tábua das Marés through the
   association's `/api/passeio` when `tide_api_key` is set, Open-Meteo Marine when it is not): the day's curve, the
