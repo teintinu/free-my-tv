@@ -146,7 +146,8 @@ var TV = (function () {
     ['globoplaywebos', 'Globoplay'], ['spotify-beehive', 'Spotify'], ['tv.twitch.tv.starshot.lg', 'Twitch'],
     ['cdp-30', 'Plex'], ['com.crunchyroll.webapp', 'Crunchyroll'], ['com.webos.app.browser', 'Web Browser'],
     ['com.webos.app.discovery', 'LG Channels'], ['com.webos.app.music', 'Music'],
-    ['com.webos.app.photovideo', 'Photo & Video'], ['com.palm.app.settings', 'Settings']
+    ['com.webos.app.photovideo', 'Photo & Video'], ['com.palm.app.settings', 'Settings'],
+    ['com.hotmart.app', 'Hotmart'], ['com.plutotv.app', 'Pluto TV']
   ];
 
   /** The TV's own apps get the TV's language; the rest keep their names. */
@@ -157,19 +158,52 @@ var TV = (function () {
     return title;
   }
 
+  function knownApp(id, title) {
+    return {id: id, title: knownTitle(id, title), icon: '', color: ''};
+  }
+
+  /**
+   * The apps the TV says it has, from the ids above. The bus can be busy right after a start (or after an install)
+   * and leave half the answers on the floor, which shows as a shelf with three apps: what didn't answer is asked
+   * once more before the list is given away.
+   */
   function knownApps(done) {
-    var found = [], left = KNOWN.length, sent = false;
+    var found = [], sent = false, order = {};
+
+    KNOWN.forEach(function (k, i) { order[k[0]] = i; });
+
     function finish() {
       if (sent) return;
       sent = true;
-      done(found.filter(function (x) { return x; }));
+      found.sort(function (a, b) { return order[a.id] - order[b.id]; });
+      done(found);
     }
-    setTimeout(finish, 5000);   // an id that never answers doesn't hold the rest
-    KNOWN.forEach(function (k, i) {
-      luna('luna://com.webos.applicationManager/getAppLoadStatus', {appId: k[0]}, function (res) {
-        if (res && res.exist) found[i] = {id: k[0], title: knownTitle(k[0], k[1]), icon: '', color: ''};
-        if (--left === 0) finish();
+
+    function round(ids, wait, then) {
+      var left = ids.length, over = false, timer = 0;
+      function end() {
+        if (over) return;
+        over = true;
+        clearTimeout(timer);
+        then();
+      }
+      if (!ids.length) { end(); return; }
+      timer = setTimeout(end, wait);
+      ids.forEach(function (k) {
+        luna('luna://com.webos.applicationManager/getAppLoadStatus', {appId: k[0]}, function (res) {
+          if (res && res.exist) found.push(knownApp(k[0], k[1]));
+          if (--left === 0) end();
+        });
       });
+    }
+
+    round(KNOWN, 8000, function () {
+      var missing = KNOWN.filter(function (k) {
+        for (var i = 0; i < found.length; i++) if (found[i].id === k[0]) return false;
+        return true;
+      });
+      if (!missing.length) { finish(); return; }
+      round(missing, 6000, finish);
     });
   }
 

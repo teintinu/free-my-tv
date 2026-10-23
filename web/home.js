@@ -73,71 +73,88 @@
 
   // MARK: - Apps on the shelf
 
-  /** Shelf apps in this order when installed, like the Android app: key, LG app id, name on the TV, brand gradient. */
-  var SHELF = [
-    ['netflix', /^netflix$/, /netflix/i, ['#0A0A0A', '#000000']],
-    ['youtube', /youtube/, /^youtube$/i, ['#1C1C1E', '#09090A']],
-    ['prime', /^amazon$/, /prime video|amazon/i, ['#2AA8FF', '#0A68D4']],
-    ['disney', /disney/, /disney/i, ['#173584', '#08143F']],
-    ['max', /hbo|wbd/, /^(hbo )?max$|hbo max/i, ['#5C30E8', '#221684']],
-    ['appletv', /appletv|apple\.tv/, /apple tv/i, ['#1C1C1E', '#000000']],
-    ['hulu', /^hulu/, /hulu/i, ['#1CE783', '#0B8F4E']],
-    ['paramount', /paramount|cbs/, /paramount/i, ['#0064FF', '#002A86']],
-    ['peacock', /peacock/, /peacock/i, ['#1C1C1E', '#000000']],
-    ['nfl', /nfl/, /^nfl/i, ['#013369', '#00163D']],
-    ['globoplay', /globoplay/, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
-    ['spotify', /spotify/, /spotify/i, ['#1DB954', '#0F7A36']]
-  ];
-
-  function shelfKey(app) {
-    for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
-    return null;
-  }
-
-  function darken(hex, f) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-    if (!m) return '#161618';
-    var n = parseInt(m[1], 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    return 'rgb(' + Math.round(r * f) + ',' + Math.round(g * f) + ',' + Math.round(b * f) + ')';
-  }
-
   /** A name that fits the tile on one line (the font shrinks for long names). */
   function wordFit(title, width, max) {
     return Math.max(18, Math.min(max, Math.floor(width * 0.8 / (Math.max(4, title.length) * 0.56))));
   }
 
-  // LG gives a Developer Mode app no icons in its app list (and hides most launch points), so the
-  // shelf draws the marks itself: white logos on the brand gradient (Simple Icons, CC0; the Disney+
-  // wordmark from Wikimedia Commons) and the Material symbols the TV's own apps deserve.
-  var LOGOS = [
-    [/^netflix$/, /netflix/i, 'icons/logo-netflix.svg'],
-    [/youtube/, /^youtube$/i, 'icons/logo-youtube.svg'],
-    [/^amazon$/, /prime video|amazon/i, 'icons/logo-prime.png'],
-    [/disney/, /disney/i, 'icons/logo-disney.svg'],
-    [/hbo|wbd/, /^(hbo )?max$|hbo max/i, 'icons/logo-hbomax.svg'],
-    [/appletv|apple\.tv/, /apple tv/i, 'icons/logo-appletv.svg'],
-    [/spotify/, /spotify/i, 'icons/logo-spotify.svg'],
-    [/cdp-30/, /plex/i, 'icons/logo-plex.svg'],
-    [/crunchyroll/, /crunchyroll/i, 'icons/logo-crunchyroll.svg'],
-    [/paramount|cbs/, /paramount/i, 'icons/logo-paramountplus.svg'],
-    [/twitch/, /twitch/i, 'icons/logo-twitch.svg'],
-    [/deezer/, /deezer/i, 'icons/logo-deezer.svg'],
-    [/discovery/, /lg channels/i, 'symbols/live_tv.png'],
-    [/app\.music$/, /music/i, 'icons/logo-music.svg'],
-    [/photovideo/, /photo/i, 'icons/logo-photos.svg'],
-    [/settings$/, /settings/i, 'symbols/settings.png'],
-    [/browser/, /browser/i, 'icons/logo-globe.svg']
-  ];
+  // The faces come baked: every brand is one image (web/icons/tile-<slug>.png, drawn by
+  // tools/make_tiles.py from the table in web/brands.js), and the same image animated is what the
+  // focused tile plays (tile-<slug>.gif). LG gives a Developer Mode app no icons at all — the app id
+  // it answers with carries no artwork — so the home draws them, and baking them is what makes the
+  // animation cost one image instead of a repainted box-shadow (Chromium 53 has no cheap glow).
 
-  function logoFor(app) {
-    for (var i = 0; i < LOGOS.length; i++) if (LOGOS[i][0].test(app.id) || LOGOS[i][1].test(app.title)) return LOGOS[i][2];
-    return '';
+  /** The still face for an app, or '' for a brand we don't know (that one shows its name). */
+  function faceArt(app) {
+    var b = brandFor(app);
+    return b ? 'icons/tile-' + b[0] + '.png' : '';
   }
 
-  /** The mark on a tile: the TV's own icon when there is one, our logo otherwise (or nothing: the name shows). */
-  function iconFor(app) { return app.icon || logoFor(app); }
+  /** An app's face: the brand tile, plus the name under the mark for the brands whose art is only a
+      symbol (or for an app we don't know). `nameSize` is that name beside a mark, `wordSize` alone. */
+  function face(app, box, wordSize, nameSize, withName) {
+    var b = brandFor(app), art = faceArt(app);
+    box.style.background = b ? b[3] : '#2A2A2E';
+    if (!art) {
+      if (withName !== false) el('div', 'word', box, app.title).style.fontSize = wordSize + 'px';
+      return;
+    }
+    var img = el('img', 'art', box);
+    img.src = art;
+    box.__gif = 'icons/tile-' + b[0] + '.gif';   // played by playFace(), in the box over the tiles
+    if (withName !== false && b[5] === 'label') {
+      setClass(box, 'lbl', true);
+      el('div', 'word', box, app.title).style.fontSize = nameSize + 'px';
+    }
+  }
 
-  /** An app's face: its own icon on its brand color (or its name, when the icon can't be read). */
+  // The animation plays once, when the focus arrives. It is a GIF drawn over the tile, in its own element:
+  // an animated image *inside* the tile (scaled, clipped, with a shadow) drops this TV to 8-10 fps, and even
+  // a scaled box stays at 38; flat, on the tile's own pixels, it draws at ~58. So the GIF is baked at the
+  // 224 x 126 the TV shows (448 x 252 costs 6 fps), the box is never transformed, and the animation covers
+  // the tile only while it runs: then the still face, baked at twice that size, is back.
+  var ANIM_MS = 1300;
+  var animBox = null, animImg = null, animTimer = 0, animOwner = null;
+
+  /** The one box the animations play in. It lives in the shelf, not with the tiles: an animated image inside the
+      scrolling row makes this TV repaint that whole layer every frame (8 fps); a box of its own beside it keeps 60. */
+  function animLayer() {
+    var holder = $('shelf');
+    if (!animBox) {
+      animBox = el('div', 'animbox', holder);
+      animImg = el('img', '', animBox);
+      animBox.style.display = 'none';
+    } else if (animBox.parentNode !== holder) {
+      holder.appendChild(animBox);
+    }
+    return animBox;
+  }
+
+  function stopAnim() {
+    animOwner = null;
+    if (!animBox) return;
+    clearTimeout(animTimer);
+    animBox.style.display = 'none';
+    animImg.src = '';   // emptied, the next focus starts the GIF from its first frame
+  }
+
+  /** Plays a tile's animation while it has the focus; leaves the still face up when it goes. Only the tile that
+      owns the box may stop it: the focus moves through the row, and every other tile is told "off" after it. */
+  function playFace(node, on) {
+    if (!node.__gif) return;
+    if (!on) { if (animOwner === node) stopAnim(); return; }
+    var box = animLayer();
+    animOwner = node;
+    clearTimeout(animTimer);
+    box.style.left = (node.offsetLeft - shelfFirst * shelfPitch) + 'px';
+    box.style.top = node.offsetTop + 'px';
+    box.style.width = node.offsetWidth + 'px';
+    box.style.height = node.offsetHeight + 'px';
+    box.style.display = '';
+    animImg.src = node.__gif;
+    animTimer = setTimeout(stopAnim, ANIM_MS);
+  }
+
   // --- Images: load and decode before the view is swapped -------------------
   // On this TV (webOS 4.x, Chromium 53) a background-image paints only once the
   // file has arrived *and* been decoded, so a view swapped first shows empty
@@ -219,7 +236,7 @@
 
   function iconUrls() {
     var urls = [];
-    for (var i = 0; i < apps.length; i++) urls.push(iconFor(apps[i]));
+    for (var i = 0; i < apps.length; i++) urls.push(faceArt(apps[i]));
     return urls;
   }
 
@@ -234,38 +251,12 @@
     return urls;
   }
 
-  /** An app's tile: the mark on top and the name under it, always both (the name alone when there is no mark).
-      `nameSize` is the size of that name when there is a mark above it. */
-  function face(app, box, wordSize, nameSize) {
-    var k = shelfKey(app);
-    var top = k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
-    var bottom = k ? k[3][1] : app.color ? darken(app.color, 0.62) : '#161618';
-    box.style.background = '-webkit-linear-gradient(top, ' + top + ', ' + bottom + ')';
-    box.style.background = 'linear-gradient(' + top + ', ' + bottom + ')';
-    var word = el('div', 'word', box, app.title);
-    var icon = iconFor(app);
-    if (icon) {
-      setClass(box, 'haslogo', true);
-      word.style.fontSize = nameSize + 'px';
-      var img = el('img', logoFor(app) ? 'logo' : '', box);
-      // A mark that cannot be read (the TV's icon sometimes is not a file) leaves the name alone, centred.
-      img.onerror = function () {
-        img.parentNode.removeChild(img);
-        setClass(box, 'haslogo', false);
-        word.style.fontSize = wordSize + 'px';
-      };
-      img.src = icon;
-    } else if (wordSize) {
-      word.style.fontSize = wordSize + 'px';
-    }
-  }
-
   var apps = [], shelf = [], others = [], inputs = [];
 
   /** Where a brand sits in the shelf's own order: the tie-break for the apps nobody opened yet. */
   function brandRank(app) {
-    for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return i;
-    return SHELF.length;
+    for (var i = 0; i < BRANDS.length; i++) if (BRANDS[i][1].test(app.id) || BRANDS[i][2].test(app.title)) return i;
+    return BRANDS.length;
   }
 
   /**
@@ -317,8 +308,15 @@
     setClass($('tideinfo'), 'hide', st.zone === Z.TOP && st.top >= 3);
     list = $('cards').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.CARDS && st.card === i);
-    list = $('tiles').children;
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.SHELF && st.shelf === i);
+    list = document.querySelectorAll('#tiles .tile');
+    var wasFirst = shelfFirst;
+    updateShelfScroll();
+    var scrolled = shelfFirst !== wasFirst;
+    for (i = 0; i < list.length; i++) {
+      var on = st.zone === Z.SHELF && st.shelf === i;
+      setClass(list[i], 'focus', on);
+      playFace(list[i], on && !scrolled);
+    }
     list = document.querySelectorAll('#drawer .key');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === i);
     list = document.querySelectorAll('#apps .cell');
@@ -326,7 +324,6 @@
     var rows = Math.max(1, Math.ceil(others.length / 5)), r = Math.floor(st.grid / 5), first = Math.max(0, Math.min(rows - 3, r - 1));
     setTransform($('apps').lastChild, 'translateY(' + (-first * 239) + 'px)');
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
-    updateShelfScroll();
     setClass($('shelfring'), 'on', st.zone === Z.SHELF);
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
   }
@@ -623,12 +620,12 @@
     // the tiles flashed the shelf every time the app came back to the foreground.
     var sig = '';
     for (var k = 0; k < shelf.length; k++) sig += shelf[k].id + '|';
-    if (sig === shelfSig && $('tiles').children.length === shelf.length) return;
+    if (sig === shelfSig && document.querySelectorAll('#tiles .tile').length === shelf.length) return;
     // A logo not decoded yet would paint empty in the rebuilt tile: load them first
     // (they come from memory in every normal run, so this is synchronous).
     var urls = [], missing = false;
     for (var u = 0; u < shelf.length; u++) {
-      var icon = iconFor(shelf[u]);
+      var icon = faceArt(shelf[u]);
       if (icon) { urls.push(icon); if (preloaded[icon] === undefined) missing = true; }
     }
     if (!missing) { shelfSig = sig; drawShelf(); return; }
@@ -655,6 +652,7 @@
     shelfVisible = Math.max(1, Math.min(n, Math.floor((SHELF_W - 2 * SHELF_PAD + TILE_GAP) / shelfPitch)));
     shelfFirst = 0;
     var tiles = $('tiles');
+    stopAnim();
     tiles.innerHTML = '';
     for (var i = 0; i < n; i++) {
       var t = el('div', 'tile', tiles);
@@ -958,7 +956,7 @@
   function openDrawer() {
     if (!drawerItems.length) return;
     renderPanels();   // the weather and the tide only age while they are out of sight
-    var tiles = $('tiles').children;
+    var tiles = document.querySelectorAll('#tiles .tile');
     st.zone = Z.DRAWER;
     st.drawer = Math.min(drawerItems.length - 1, nearest(document.querySelectorAll('#drawer .key'), centerX(tiles[st.shelf])));
     updateFocus();
@@ -967,7 +965,7 @@
   function closeDrawer() {
     var keys = document.querySelectorAll('#drawer .key');
     st.zone = Z.SHELF;
-    if (shelf.length) st.shelf = nearest($('tiles').children, centerX(keys[st.drawer]));
+    if (shelf.length) st.shelf = nearest(document.querySelectorAll('#tiles .tile'), centerX(keys[st.drawer]));
     updateFocus();
   }
 
@@ -990,7 +988,7 @@
       var r = Math.floor(i / 5), c = i % 5, cell = el('div', 'cell', grid);
       cell.style.left = (130 + c * 340) + 'px';
       cell.style.top = (196 + r * 239) + 'px';
-      face(others[i], el('div', 'face', cell), wordFit(others[i].title, 300, 34), 22);
+      face(others[i], el('div', 'face', cell), wordFit(others[i].title, 300, 34), 22, false);
       el('div', 'label', cell, others[i].title);
       hover(cell, Z.APPS, i);
     }
@@ -1161,7 +1159,7 @@
   }
 
   function move(dx, dy) {
-    var tiles = $('tiles').children, cardNodes = $('cards').children;
+    var tiles = document.querySelectorAll('#tiles .tile'), cardNodes = $('cards').children;
     switch (st.zone) {
       case Z.SHELF:
         if (dx) st.shelf = Math.max(0, Math.min(shelf.length - 1, st.shelf + dx));
@@ -1353,8 +1351,8 @@
   // moment later — the staged appearance that reads as a flash on a TV.
   function revealWhenPainted() {
     if (revealed) return;
-    var tiles = $('tiles');
-    if (!tiles || !tiles.children.length) return;
+    var tiles = document.querySelectorAll('#tiles .tile');
+    if (!tiles || !tiles.length) return;
     if (!hasClass(body, 'cards-ready') && !hasClass(body, 'no-picks')) return;
     markReady();
   }

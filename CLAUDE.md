@@ -239,11 +239,23 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   `launcher()`: launches made elsewhere are invisible), the least used at the right, and the row slides with
   `transform` inside a 1760 px window (6 tiles in view, 224 × 126). The manual shelf editor was removed with it.
   Where LG denies `listLaunchPoints` to Developer Mode apps (this fork's TV does, on webOS 4), `knownApps()` asks
-  `getAppLoadStatus` for the ids of `KNOWN` (in `web/tv.js`: the streaming apps and LG's own Discovery/Channels,
-  Music, Photo & Video and Settings) — an id outside that list only appears through the remote control API (SSAP,
-  which the person pairs once). That list has no icons at all, so `face()` falls back to the white logos in
-  `web/icons/logo-*.svg` (Simple Icons, CC0; the Disney+ wordmark from Wikimedia) and to the Material symbols for
-  LG's apps. The shelf bar lights up with a ring (`#shelfring`, opacity only) while the shelf has the focus.
+  `getAppLoadStatus` for the ids of `KNOWN` (in `web/tv.js`: the streaming apps, Hotmart and Pluto TV, and LG's own
+  Discovery/Channels, Music, Photo & Video and Settings) — an id outside that list only appears through the remote
+  control API (SSAP, which the person pairs once). That list has no icons at all, so the home draws every tile
+  itself: `web/brands.js` is one row per brand (its colour, its mark, and whether the name goes under the mark),
+  `tools/make_tiles.py` bakes each face into `web/icons/tile-<slug>.png` (twice the 224 × 126 tile) and the focus
+  animation into `tile-<slug>.gif` (224 × 126, 16 frames), and `face()` puts the still face on the tile. The
+  wordmarks (Netflix, YouTube, Prime Video, Disney+, Max, Apple TV, Globoplay, Pluto TV, Hotmart, Spotify,
+  Crunchyroll, Paramount+, Plex, Deezer) carry the name, so those tiles show no label; the symbols (Twitch, LG
+  Channels, Music, Photo & Video, Settings, Web Browser) and the brands with no artwork (Hulu, Peacock, NFL) keep
+  the name under it. The focused tile plays its GIF in a box of its own beside the row (`#shelf .animbox`, never
+  inside `#tiles`): an animated image inside the tile, inside a scaled box or inside the scrolling row makes this TV
+  repaint that whole layer every frame (8-17 fps median frame time 50 ms); beside the row and drawn at the tile's own
+  224 × 126 it holds the 16.7 ms median, with a few slower frames on a focus change (the row itself already stutters
+  there). At rest the home stays at 0 DOM mutations and 60 fps. The shelf bar lights up with a ring
+  (`#shelfring`, opacity only) while the shelf has the focus. Rebuild the faces with
+  `python3 tools/make_tiles.py --force` (Chrome and Pillow) after touching `web/brands.js` or the logo files;
+  `--check` also writes every face into one image.
   Text: `tr(pt, en, es)`, with the German and Russian in `web/strings.js` (keyed by the English). Built without a city (`--generic`), `web/zones.js`
   (`tools/make_zones.py`, from the tz database) turns the TV's time zone into the city and the region.
   `tools/webapp.py` is what both builds share. Preview: `python3 webos/build.py --preview` (or `tizen/build.py`), then

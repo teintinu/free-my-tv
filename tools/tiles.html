@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<!-- The tile as tools/make_tiles.py photographs it: the home's own .tile, with the mask standing in for the
+     artwork that the baked image will carry. Only the generator opens this page. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../web/home.css">
+<style>
+  html, body { background: #F5F5F7; margin: 0; overflow: hidden; }
+  #box { position: absolute; left: 0; top: 0; width: 224px; height: 126px; }
+  #box .tile {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 224px;
+    height: 126px;
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: none;
+    -webkit-transition: none;
+    transition: none;
+  }
+  /* The size is set by script from each file's viewBox: an SVG without width and height gets Chromium's
+     default 300 px instead of the tile's, and the mark came out cropped. */
+  #mark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    -webkit-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
+  }
+  #box.lbl #mark { top: 38%; }
+  #shine {
+    position: absolute;
+    left: -70px;
+    top: -60px;
+    width: 64px;
+    height: 300px;
+    background: -webkit-linear-gradient(left, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0));
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0));
+    opacity: 0;
+  }
+  #glow {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 130px;
+    height: 130px;
+    margin: -65px 0 0 -65px;
+    border-radius: 50%;
+    background: -webkit-radial-gradient(rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+    opacity: 0;
+  }
+  /* A light tile (YouTube, Hotmart) gets a dark sheen instead: white on white is nothing. */
+  #box.light #shine {
+    background: -webkit-linear-gradient(left, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0));
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0));
+  }
+  #box.light #glow {
+    background: -webkit-radial-gradient(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0));
+    background: radial-gradient(circle, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0));
+  }
+</style>
+</head>
+<body>
+<div id="box">
+  <div class="tile">
+    <div id="glow"></div>
+    <img id="mark" alt="">
+    <div id="shine"></div>
+  </div>
+</div>
+<script src="../web/brands.js"></script>
+<script>
+  var box = document.getElementById('box');
+  var tile = box.querySelector('.tile');
+  var mark = document.getElementById('mark');
+  var shine = document.getElementById('shine');
+  var glow = document.getElementById('glow');
+  var motion = '';
+
+  function setBrand(index) {
+    var b = BRANDS[index];
+    var light = b[3] === '#FFFFFF' || b[3] === '#F5F5F7';
+    // The Material symbols are packed from app/assets/symbols; everything else is web/. 
+    var art = b[4] ? (b[4].indexOf('symbols/') === 0 ? '../app/assets/' + b[4] : '../web/' + b[4]) : '';
+    box.className = (b[5] === 'label' ? 'lbl' : '') + (light ? ' light' : '');
+    tile.style.background = b[3];
+    mark.style.display = art ? '' : 'none';
+    motion = b[5] === 'spin' ? 'spin' : '';
+    mark.src = art;
+    if (!art) return 'ok';
+    // Fit the mark in its box, keeping the file's own proportions (a synchronous read: file://, no CORS).
+    var text = '';
+    try {
+      var req = new XMLHttpRequest();
+      req.open('GET', art, false);
+      req.send();
+      text = req.responseText;
+    } catch (e) {}
+    var vb = /viewBox="([^"]+)"/.exec(text);
+    var w = 24, h = 24;
+    if (vb) {
+      var parts = vb[1].split(/[ ,]+/);
+      w = parseFloat(parts[2]) || 24;
+      h = parseFloat(parts[3]) || 24;
+    }
+    var boxW = b[5] === 'label' ? 132 : 168, boxH = b[5] === 'label' ? 66 : 84;
+    var k = Math.min(boxW / w, boxH / h);
+    mark.style.width = Math.round(w * k) + 'px';
+    mark.style.height = Math.round(h * k) + 'px';
+    return 'ok';
+  }
+
+  // 0 is the tile at rest and 1 is the same tile again: the image can be replayed and ends where it started.
+  function setFrame(p) {
+    var e = Math.sin(Math.PI * p);
+    var scale = 1 + 0.06 * e;
+    mark.style.transform = 'translate(-50%, -50%) scale(' + scale.toFixed(4) + ')';
+    glow.style.opacity = (0.16 * e).toFixed(3);
+    shine.style.opacity = (Math.min(1, 2.6 * Math.min(p, 1 - p))).toFixed(3);
+    shine.style.transform = 'translateX(' + (-70 + 420 * p).toFixed(1) + 'px) rotate(16deg)';
+    if (motion === 'spin') {
+      var turn = (p * 2 - 1) * 9;
+      mark.style.transform = 'translate(-50%, -50%) rotate(' + turn.toFixed(2) + 'deg) scale(1)';
+    }
+    return 'ok';
+  }
+
+  // Waits for the fonts and the marks the home would have preloaded.
+  function ready() {
+    var images = [];
+    for (var i = 0; i < BRANDS.length; i++) {
+      if (BRANDS[i][4]) images.push(BRANDS[i][4].indexOf('symbols/') === 0 ? '../app/assets/' + BRANDS[i][4] : '../web/' + BRANDS[i][4]);
+    }
+    var left = images.length, done = false, finished = false;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      document.title = 'ready';
+    }
+    left = images.length;
+    if (!left) { finish(); return; }
+    for (var j = 0; j < images.length; j++) {
+      var img = new Image();
+      img.onload = img.onerror = function () { if (--left <= 0) finish(); };
+      img.src = '../web/' + images[j];
+    }
+  }
+  window.addEventListener('load', function () {
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(ready);
+    else ready();
+  });
+</script>
+</body>
+</html>

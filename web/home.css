@@ -306,21 +306,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tile::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  height: 50%;
-  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
-  background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
-  opacity: 0;
-  -webkit-transition: opacity 0.25s;
-  transition: opacity 0.25s;
-}
 .tile.focus { -webkit-transform: scale(1.2); transform: scale(1.2); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34); z-index: 2; }
-.tile.focus::after { opacity: 1; }
 .night .tile { box-shadow: 0 4px 22px rgba(0, 0, 0, 0.3); }
 .night .tile.focus { box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6); }
 
@@ -654,44 +640,31 @@ html.night, body.night { background: #0B0B0D; }
 #shelfring.on { opacity: 1; }
 .night #shelfring { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.62), 0 0 34px rgba(255, 255, 255, 0.16); }
 
-/* The logos are white marks: a little larger than a full-color app icon, so they read from the sofa. */
-.tile img.logo { max-width: 78%; max-height: 64%; }
-
-/* A tile with a mark: the mark above and the name under it, both always visible, with room to
-   breathe (the name keeps its own line instead of sitting under the logo). */
-.tile.haslogo img {
-  left: 50%;
-  top: 14px;
-  max-width: 62%;
-  max-height: 56px;
-  -webkit-transform: translateX(-50%);
-  transform: translateX(-50%);
+/* The face is one baked image per brand (tools/make_tiles.py): it fills the tile, name included where the
+   brand has one. The animated copy sits on top of it and is only loaded while that tile has the focus. */
+.tile img.art, .cell .face img.art {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  -webkit-transform: none;
+  transform: none;
 }
-.tile.haslogo .word {
+
+/* Brands whose art is only a symbol (LG's own apps, Twitch) keep the name under it, in the TV's language. */
+.tile.lbl .word {
   top: auto;
   bottom: 9px;
+  left: 6%;
+  right: 6%;
   margin-top: 0;
   height: 26px;
   line-height: 26px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.94);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
-}
-.cell .face.haslogo img {
-  left: 50%;
-  top: 24px;
-  max-width: 56%;
-  max-height: 72px;
-  -webkit-transform: translateX(-50%);
-  transform: translateX(-50%);
-}
-.cell .face.haslogo .word {
-  top: auto;
-  bottom: 12px;
-  margin-top: 0;
-  height: 30px;
-  line-height: 30px;
-  color: #FFF;
 }
 
 /* The focused tile: a white ring (plus a dark edge, for light backgrounds) around it, so the eye
@@ -712,3 +685,16 @@ html.night, body.night { background: #0B0B0D; }
 .night .tile.focus {
   box-shadow: 0 0 0 3px #FFF, 0 0 0 6px rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.6);
 }
+
+/* The focused tile's animation: a GIF over the tile, in its own box — never inside the tile, and never scaled:
+   an animated image in the scaled, clipped tile draws at 10 fps on this TV, and 38 even in its own scaled box;
+   flat on the tile's own pixels it holds 60. It covers the tile only while it runs, then the still face, baked
+   at twice that size, is back. */
+#tiles .animbox {
+  position: absolute;
+  border-radius: 22px;
+  overflow: hidden;
+  z-index: 3;
+  pointer-events: none;
+}
+#tiles .animbox img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }

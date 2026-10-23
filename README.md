@@ -18,7 +18,7 @@ Open source. Built with Claude Code. One button to undo.
 ## What you get
 
 - **No ads.** No sponsored rows, banners or autoplaying promos. Not one.
-- **Your apps, front and center.** A glass shelf with the apps you actually use. On Google TV you pick them and their order right on the TV; on LG and Samsung every app the TV has is there, the most used first, and the shelf slides right to the ones you open less.
+- **Your apps, front and center.** A glass shelf with the apps you actually use. On Google TV you pick them and their order right on the TV; on LG and Samsung every app the TV has is there, drawn as its own brand tile (Netflix, YouTube, Prime Video, Disney+, Max, Apple TV, Globoplay, Pluto TV, Hotmart…), the most used first, and the shelf slides right to the ones you open less. The tile under the remote's focus plays a short sheen.
 - **Trending, not sponsored.** Three fresh picks every hour from what's trending this week and the latest releases, only from apps you already have. Movies and Shows get their own tabs.
 - **Weather, tide and moon, one press away.** The hour-by-hour forecast, sunrise and sunset, the moon's phase and the day's tide — with the window when the beach is low enough for a buggy, and when it is time to leave it. (On Google TV the drawer shows market prices instead.)
 - **Light by day, dark by night.** It follows your city's real sunset, the way your phone does.
@@ -244,7 +244,7 @@ No accounts, no analytics, no tracking. The app talks to TMDB, Open-Meteo (with 
 - This product uses the TMDB API but is not endorsed or certified by [TMDB](https://www.themoviedb.org/).
 - Links to the titles in the streaming apps by [Watchmode](https://api.watchmode.com/).
 - Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0); the tide without a key comes from its marine model. Tide tables from the [Tábua das Marés](https://www.marinha.mil.br/chm/tabuas-de-mare) (DHN/IBGE). Prices from the [Binance](https://www.binance.com/) public API (Google TV).
-- Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Font: [Inter](https://rsms.me/inter/) (SIL OFL 1.1). Coin logos: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) (CC0). Brand marks on the shelf: [Simple Icons](https://simpleicons.org) (CC0) and the Disney+ wordmark from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Disney%2B_logo.svg).
+- Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Font: [Inter](https://rsms.me/inter/) (SIL OFL 1.1). Coin logos: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) (CC0). Brand marks and wordmarks on the shelf: [Simple Icons](https://simpleicons.org) (CC0) and, from [Wikimedia Commons](https://commons.wikimedia.org/), the Disney+, Netflix, YouTube, Globoplay, Pluto TV and Hotmart logos.
 - Not affiliated with Google, TCL, LG, Samsung or any streaming service. App names and logos belong to their owners.
 
 ## License
