@@ -245,8 +245,9 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   gradient of four stops set in `drawCurve`, red down to the limit and blue below it, red and blue dots for the highs
   and lows, and no frame around the good stretches (the earlier green bands and the dashed limit are gone: the line's
   own colour says it). Day and night are shaded behind the curve from the weather card's sunrise and sunset
-  (`drawDayNight`, hairlines at the two): the night is tinted on the light look, and on the dark look — night already —
-  it is the day that is tinted instead, swapped by the CSS. The same two hours are printed in the panel's head row
+  (`drawDayNight`, hairlines at the two): the day is a warm yellow (#FFD84D) and the night a blue-grey in both looks,
+  and on the dark glass — night already — the day's yellow is what marks the hours and the night bands step aside
+  (its opacity goes up there: a pale wash on a dark panel reads as grey). The same two hours are printed in the panel's head row
   beside a sunrise symbol (`05:09–17:23`), so the panel says it even without the weather card.
   The credit at the panel's foot is hidden when the weather panel is beside it (`box.width < 720`), where it would
   touch the moon's hours. The Android app
