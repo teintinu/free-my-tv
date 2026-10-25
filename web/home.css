@@ -590,9 +590,29 @@ html.night, body.night { background: #0B0B0D; }
 /* The tide panel: the day's curve, its highs and lows, the beach's door and the moon. */
 #tide .curve { position: absolute; left: 34px; top: 66px; }
 #tide .curve .line { fill: none; stroke-width: 2.4; }
-#tide .curve .area { opacity: 1; }
-#tide .curve .thr { stroke: #34C759; stroke-width: 1.4; stroke-dasharray: 6 6; opacity: 0.6; }
-#tide .curve .band { fill: #34C759; opacity: 0.14; }
+/* The night: the hours before sunrise and after sunset, in a cool tint, with a hairline at each (the weather
+   card prints the exact times). It reads on the light glass and on the dark one. */
+#tide .curve .nightband { fill: #3F6FBF; opacity: 0.12; }
+/* On the dark glass the panel is night already: there the day is the tinted one (a warm wash) and the night
+   bands go away, so the reading is the same in both looks. */
+#tide .curve .dayband { fill: #8FB4E8; opacity: 0.14; display: none; }
+.night #tide .curve .nightband { display: none; }
+.night #tide .curve .dayband { display: block; }
+#tide .curve .sunline { stroke: currentColor; stroke-width: 1; stroke-dasharray: 2 5; opacity: 0.25; }
+/* The sun's hours in the panel's head row, between the title and "agora". */
+#tide .dayline {
+  position: absolute;
+  left: 230px;
+  top: 33px;
+  font-size: 20px;
+  font-weight: 500;
+  color: #8E8E93;
+  white-space: nowrap;
+  font-feature-settings: 'tnum';
+}
+#tide .dayline .sym { width: 22px; height: 22px; vertical-align: -5px; margin-right: 6px; }
+#tide .dayline.off { display: none; }
+.night #tide .dayline { color: rgba(255, 255, 255, 0.6); }
 #tide .curve .dot.max { fill: #EF4444; opacity: 0.95; }
 #tide .curve .dot.min { fill: #3B82F6; opacity: 0.95; }
 #tide .curve .now { stroke: currentColor; stroke-width: 1.4; opacity: 0.55; }

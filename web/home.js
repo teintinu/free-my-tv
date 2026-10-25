@@ -948,6 +948,10 @@
     var box = {width: width, dots: [], ptsSig: '', extSig: '', nowTick: -1, moonSig: ''};
     el('div', 'head', card, tr('Maré', 'Tide', 'Marea'));
     box.side = el('div', 'side', card);
+    box.day = el('div', 'dayline', card);
+    box.daySym = sym('sunrise', box.day);
+    box.dayText = document.createTextNode('');
+    box.day.appendChild(box.dayText);
     var ns = 'http://www.w3.org/2000/svg', H = 92;
     var svg = document.createElementNS(ns, 'svg');
     svg.setAttribute('class', 'curve');
@@ -960,45 +964,54 @@
       svg.appendChild(e);
       return e;
     }
-    // Colours, as in the association's dashboard: the water above the beach's limit is red, below it is blue,
-    // and the stretches a buggy can take the sand are green bands behind the curve.
+    // The curve is the chart: it is red over the beach's limit and blue under it, one vertical gradient
+    // (`drawCurve`), with no frame around the good stretches. Behind it, the hours of night — before sunrise and
+    // after sunset, the same ones the weather card prints — are tinted, with a hairline at each of the two.
     var defs = document.createElementNS(ns, 'defs');
-    function stops(id, opacity) {
-      var g = document.createElementNS(ns, 'linearGradient');
-      g.setAttribute('id', id);
-      g.setAttribute('x1', '0');
-      g.setAttribute('y1', '0');
-      g.setAttribute('x2', '0');
-      g.setAttribute('y2', '1');
-      var list = [];
-      for (var i = 0; i < 4; i++) {
-        var st = document.createElementNS(ns, 'stop');
-        st.setAttribute('offset', '0');
-        st.setAttribute('stop-color', '#3B82F6');
-        if (opacity) st.setAttribute('stop-opacity', opacity);
-        g.appendChild(st);
-        list.push(st);
-      }
-      defs.appendChild(g);
-      return list;
+    var grad = document.createElementNS(ns, 'linearGradient');
+    grad.setAttribute('id', 'tideLine');
+    grad.setAttribute('x1', '0');
+    grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '0');
+    grad.setAttribute('y2', '1');
+    box.lineStops = [];
+    for (var g = 0; g < 4; g++) {
+      var stop = document.createElementNS(ns, 'stop');
+      stop.setAttribute('offset', '0');
+      stop.setAttribute('stop-color', '#3B82F6');
+      grad.appendChild(stop);
+      box.lineStops.push(stop);
     }
-    box.lineStops = stops('tideLine', 0);
-    box.fillStops = stops('tideFill', '0.16');
+    defs.appendChild(grad);
     svg.appendChild(defs);
-    box.bands = document.createElementNS(ns, 'g');
-    box.bandRects = [];
-    for (var b = 0; b < 4; b++) {
-      var band = document.createElementNS(ns, 'rect');
-      band.setAttribute('class', 'band');
-      band.setAttribute('y', '0');
-      band.setAttribute('height', String(H));
-      band.setAttribute('visibility', 'hidden');
-      box.bands.appendChild(band);
-      box.bandRects.push(band);
+    box.nightRects = [];
+    for (var n = 0; n < 2; n++) {
+      var night = document.createElementNS(ns, 'rect');
+      night.setAttribute('class', 'nightband');
+      night.setAttribute('y', '0');
+      night.setAttribute('height', String(H));
+      night.setAttribute('visibility', 'hidden');
+      svg.appendChild(night);
+      box.nightRects.push(night);
     }
-    svg.appendChild(box.bands);
-    box.thr = node('line', {x1: 0, y1: 0, x2: width, y2: 0, 'class': 'thr'});
-    box.area = node('path', {'class': 'area', fill: 'url(#tideFill)'});
+    // In the night look the panel is already dark, so there the day is the one tinted (a warm wash between
+    // sunrise and sunset) and the night bands are hidden — the CSS swaps the two.
+    box.dayRect = document.createElementNS(ns, 'rect');
+    box.dayRect.setAttribute('class', 'dayband');
+    box.dayRect.setAttribute('y', '0');
+    box.dayRect.setAttribute('height', String(H));
+    box.dayRect.setAttribute('visibility', 'hidden');
+    svg.appendChild(box.dayRect);
+    box.sunLines = [];
+    for (var l = 0; l < 2; l++) {
+      var line = document.createElementNS(ns, 'line');
+      line.setAttribute('class', 'sunline');
+      line.setAttribute('y1', '0');
+      line.setAttribute('y2', String(H));
+      line.setAttribute('visibility', 'hidden');
+      svg.appendChild(line);
+      box.sunLines.push(line);
+    }
     box.line = node('path', {'class': 'line', stroke: 'url(#tideLine)'});
     box.now = node('line', {x1: 0, y1: 0, x2: 0, y2: H, 'class': 'now'});
     card.appendChild(svg);
@@ -1030,16 +1043,9 @@
       d += (i ? 'L' : 'M') + Math.round(x(pts[i].t) * 10) / 10 + ' ' + Math.round(y(pts[i].level) * 10) / 10;
     }
     box.line.setAttribute('d', d);
-    box.area.setAttribute('d', 'M0 ' + H + d.replace(/^M/, 'L') + 'L' + box.width + ' ' + H + 'Z');
-    // The beach's limit, only when it crosses this day's water.
-    var limit = Prefs.beachLevel(), ty = y(limit), on = limit > box.lo && limit < box.hi;
-    box.thr.setAttribute('y1', ty.toFixed(1));
-    box.thr.setAttribute('y2', ty.toFixed(1));
-    box.thr.setAttribute('visibility', on ? 'visible' : 'hidden');
-    // The two colours meet at the limit: above it the line is red, below it blue.
-    var at = Math.max(0, Math.min(1, ty / H)).toFixed(4);
-    var red = '#EF4444', blue = '#3B82F6';
-    var line = box.lineStops, fill = box.fillStops;
+    // The two colours meet at the beach's limit: above it the line is red, below it blue.
+    var limit = Prefs.beachLevel(), at = Math.max(0, Math.min(1, y(limit) / H)).toFixed(4);
+    var red = '#EF4444', blue = '#3B82F6', line = box.lineStops;
     line[0].setAttribute('offset', '0');
     line[0].setAttribute('stop-color', red);
     line[1].setAttribute('offset', at);
@@ -1048,32 +1054,31 @@
     line[2].setAttribute('stop-color', blue);
     line[3].setAttribute('offset', '1');
     line[3].setAttribute('stop-color', blue);
-    fill[0].setAttribute('offset', '0');
-    fill[0].setAttribute('stop-color', red);
-    fill[1].setAttribute('offset', at);
-    fill[1].setAttribute('stop-color', red);
-    fill[2].setAttribute('offset', at);
-    fill[2].setAttribute('stop-color', blue);
-    fill[3].setAttribute('offset', '1');
-    fill[3].setAttribute('stop-color', blue);
   }
 
-  /** The green bands: the stretches of the day a buggy can be on the sand. */
-  function drawBands(box, spans, dayStart) {
-    for (var i = 0; i < box.bandRects.length; i++) {
-      var r = box.bandRects[i], sp = spans[i], on = false;
-      if (sp) {
-        var x1 = Math.max(0, (sp.start - dayStart) / 86400000 * box.width);
-        var x2 = Math.min(box.width, (sp.end - dayStart) / 86400000 * box.width);
-        if (x2 > x1) {
-          r.setAttribute('x', x1.toFixed(1));
-          r.setAttribute('width', (x2 - x1).toFixed(1));
-          r.setAttribute('visibility', 'visible');
-          on = true;
-        }
+  /** The night on the chart: from midnight to sunrise and from sunset to midnight, with a hairline at each. */
+  function drawDayNight(box, start, end) {
+    var w = Data.weather, rise = w && w.sunrise ? w.sunrise : start + 6 * 3600000;
+    var set = w && w.sunset ? w.sunset : start + 18 * 3600000;
+    function x(t) { return Math.max(0, Math.min(box.width, (t - start) / (end - start) * box.width)); }
+    var xs = [0, x(rise), x(set), box.width];
+    for (var i = 0; i < 2; i++) {
+      var r = box.nightRects[i], x1 = xs[i * 2], x2 = xs[i * 2 + 1];
+      if (x2 - x1 > 1) {
+        r.setAttribute('x', x1.toFixed(1));
+        r.setAttribute('width', (x2 - x1).toFixed(1));
+        r.setAttribute('visibility', 'visible');
+      } else {
+        r.setAttribute('visibility', 'hidden');
       }
-      if (!on) r.setAttribute('visibility', 'hidden');
+      var line = box.sunLines[i], at = i === 0 ? x(rise) : x(set);
+      line.setAttribute('x1', at.toFixed(1));
+      line.setAttribute('x2', at.toFixed(1));
+      line.setAttribute('visibility', at > 0 && at < box.width ? 'visible' : 'hidden');
     }
+    box.dayRect.setAttribute('x', x(rise).toFixed(1));
+    box.dayRect.setAttribute('width', Math.max(0, x(set) - x(rise)).toFixed(1));
+    box.dayRect.setAttribute('visibility', 'visible');
   }
 
   function placeDots(box, extremes, dayStart) {
@@ -1119,14 +1124,13 @@
       esig += ext[i].t + ':' + ext[i].level + ',';
     }
     setText(box.extr, parts.join('   ·   '));
-    var pts = Data.curve(start, end);
-    var spans = Data.beachSpans(Prefs.beachLevel(), start, end), ssig = '';
-    for (var b = 0; b < spans.length; b++) ssig += spans[b].start + ':' + spans[b].end + ',';
-    var psig = pts.length + '|' + (pts.length ? pts[0].t : 0) + '|' + (pts.length ? pts[pts.length - 1].t : 0) + '|' + ssig;
+    var pts = Data.curve(start, end), w = Data.weather;
+    var dsig = (w && w.sunrise ? w.sunrise : 0) + '|' + (w && w.sunset ? w.sunset : 0);
+    var psig = pts.length + '|' + (pts.length ? pts[0].t : 0) + '|' + (pts.length ? pts[pts.length - 1].t : 0) + '|' + dsig;
     if (pts.length && psig !== box.ptsSig) {
       box.ptsSig = psig;
       drawCurve(box, pts, start);
-      drawBands(box, spans, start);
+      drawDayNight(box, start, end);
       box.extSig = '';
     }
     if (esig !== box.extSig) {
@@ -1141,6 +1145,11 @@
       setText(box.moonText, moonName(m.phase) + ' · ' + Math.round(m.illumination * 100) + '%' +
         (moonWindow(m) ? ' · ' + moonWindow(m) : ''));
     }
+    // The sun's hours, beside the chart's night shading: "Nascer 05:31 · pôr 17:23" is in the weather card,
+    // this is the compact version for when only the tide panel is up.
+    var sx = w && w.sunrise, ss = w && w.sunset;
+    setText(box.dayText, sx && ss ? ' ' + Data.time(sx) + '–' + Data.time(ss) : '');
+    setClass(box.day, 'off', !(sx && ss));
     setText(box.source, shortSource(Data.tideLabel()));
     // The credit holds the right end of the moon's line. With the weather panel beside it the tide panel is
     // narrower than the line and the credit would touch the moon's hours, so there it goes.

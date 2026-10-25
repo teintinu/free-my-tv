@@ -241,9 +241,13 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   association's `/api/passeio` when `tide_api_key` is set, Open-Meteo Marine when it is not): the day's curve, the
   highs and lows, and the stretches when the water is below `tide_beach_level`. The strip at the top prints the two
   next of those ("agora até 12:09 · depois 17:16–00:17") after a buggy icon that takes the colour of the answer, and
-  the drawer's chart repeats the reading in colour, as the association's dashboard does: one vertical gradient on the
-  line and the area, red down to the limit and blue below it (four stops set in `drawCurve`), green bands behind the
-  curve for the windows (`Data.beachSpans`), red and blue dots for the highs and lows, and the limit dashed in green.
+  the drawer's chart repeats the reading with the line alone, as the association's dashboard does: a vertical
+  gradient of four stops set in `drawCurve`, red down to the limit and blue below it, red and blue dots for the highs
+  and lows, and no frame around the good stretches (the earlier green bands and the dashed limit are gone: the line's
+  own colour says it). Day and night are shaded behind the curve from the weather card's sunrise and sunset
+  (`drawDayNight`, hairlines at the two): the night is tinted on the light look, and on the dark look — night already —
+  it is the day that is tinted instead, swapped by the CSS. The same two hours are printed in the panel's head row
+  beside a sunrise symbol (`05:09–17:23`), so the panel says it even without the weather card.
   The credit at the panel's foot is hidden when the weather panel is beside it (`box.width < 720`), where it would
   touch the moon's hours. The Android app
   still shows the crypto quotes and its own shelf (eight apps, picked and ordered on the TV): a port of the
