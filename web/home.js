@@ -1006,6 +1006,14 @@
     box.dayRect.setAttribute('height', String(H));
     box.dayRect.setAttribute('visibility', 'hidden');
     svg.appendChild(box.dayRect);
+    // A sliver of pastel yellow along the top of those hours: on the dark glass a wash alone reads as beige,
+    // and a thin bar is what says "day" without painting a block.
+    box.dayBar = document.createElementNS(ns, 'rect');
+    box.dayBar.setAttribute('class', 'daybar');
+    box.dayBar.setAttribute('y', '0');
+    box.dayBar.setAttribute('height', '4');
+    box.dayBar.setAttribute('visibility', 'hidden');
+    svg.appendChild(box.dayBar);
     box.sunLines = [];
     for (var l = 0; l < 2; l++) {
       var line = document.createElementNS(ns, 'line');
@@ -1080,9 +1088,13 @@
       line.setAttribute('x2', at.toFixed(1));
       line.setAttribute('visibility', at > 0 && at < box.width ? 'visible' : 'hidden');
     }
-    box.dayRect.setAttribute('x', x(rise).toFixed(1));
-    box.dayRect.setAttribute('width', Math.max(0, x(set) - x(rise)).toFixed(1));
+    var sx = x(rise).toFixed(1), sw = Math.max(0, x(set) - x(rise)).toFixed(1);
+    box.dayRect.setAttribute('x', sx);
+    box.dayRect.setAttribute('width', sw);
     box.dayRect.setAttribute('visibility', 'visible');
+    box.dayBar.setAttribute('x', sx);
+    box.dayBar.setAttribute('width', sw);
+    box.dayBar.setAttribute('visibility', 'visible');
   }
 
   function placeDots(box, extremes, dayStart) {

@@ -595,10 +595,12 @@ html.night, body.night { background: #0B0B0D; }
 #tide .curve .nightband { fill: #3F6FBF; opacity: 0.12; }
 /* The day is the warm one, in both looks: yellow where the sun is up, blue-grey where it is not. On the dark
    glass — night already — the day wash is what marks the hours, and the night bands step aside. */
-#tide .curve .dayband { fill: #FFD84D; opacity: 0.22; }
+#tide .curve .dayband { fill: #FFF6DC; opacity: 0.34; }
 .night #tide .curve .nightband { display: none; }
-/* On the dark glass a pale wash reads as grey, so the day keeps its yellow there: the same gold, with more of it. */
-.night #tide .curve .dayband { opacity: 0.55; }
+/* A saturated yellow over the dark glass turns brown and a cream one turns beige, so on the dark look the wash
+   stays faint and the day is marked by the pale yellow sliver at the top of those hours. */
+.night #tide .curve .dayband { opacity: 0.12; }
+#tide .curve .daybar { fill: #FFE49B; opacity: 0.95; }
 #tide .curve .sunline { stroke: currentColor; stroke-width: 1; stroke-dasharray: 2 5; opacity: 0.25; }
 /* The sun's hours in the panel's head row, between the title and "agora". */
 #tide .dayline {
