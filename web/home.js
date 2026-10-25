@@ -152,10 +152,14 @@
     var box = animLayer();
     animOwner = node;
     clearTimeout(animTimer);
-    box.style.left = (node.offsetLeft - shelfFirst * shelfPitch) + 'px';
-    box.style.top = node.offsetTop + 'px';
-    box.style.width = node.offsetWidth + 'px';
-    box.style.height = node.offsetHeight + 'px';
+    // The focused tile is 12% bigger than the resting one (`.tile.focus`), and the animation is baked at that
+    // size: the box is laid over the grown tile, not over the small one, or the art shrinks for the second it runs.
+    var w = node.offsetWidth, h = node.offsetHeight;
+    var gw = Math.round(w * 1.12), gh = Math.round(h * 1.12);
+    box.style.left = (node.offsetLeft - shelfFirst * shelfPitch - (gw - w) / 2) + 'px';
+    box.style.top = (node.offsetTop - (gh - h) / 2) + 'px';
+    box.style.width = gw + 'px';
+    box.style.height = gh + 'px';
     box.style.display = '';
     animImg.src = node.__gif;
     animTimer = setTimeout(stopAnim, ANIM_MS);

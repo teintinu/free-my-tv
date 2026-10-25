@@ -713,14 +713,16 @@ html.night, body.night { background: #0B0B0D; }
    an animated image in the scaled, clipped tile draws at 10 fps on this TV, and 38 even in its own scaled box;
    flat on the tile's own pixels it holds 60. It covers the tile only while it runs, then the still face, baked
    at twice that size, is back. */
-#tiles .animbox {
+/* It lives beside the tiles, inside the shelf (not in the scrolling row), so the selector follows it there:
+   with #tiles in front it was an unpositioned block at the shelf's own 0,0 instead of over the focused tile. */
+#shelf .animbox {
   position: absolute;
   border-radius: 22px;
   overflow: hidden;
   z-index: 3;
   pointer-events: none;
 }
-#tiles .animbox img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#shelf .animbox img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 
 /* The picks are one strip inside a window: the wide first card and the rest slide together, and the margin the
    cards keep from the window's edges leaves room for the focused card's shadow. */

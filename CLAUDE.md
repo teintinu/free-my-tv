@@ -262,15 +262,18 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   control API (SSAP, which the person pairs once). That list has no icons at all, so the home draws every tile
   itself: `web/brands.js` is one row per brand (its colour, its mark, and whether the name goes under the mark),
   `tools/make_tiles.py` bakes each face into `web/icons/tile-<slug>.png` (twice the 224 × 126 tile) and the focus
-  animation into `tile-<slug>.gif` (224 × 126, 16 frames), and `face()` puts the still face on the tile. The
+  animation into `tile-<slug>.gif` (251 × 141 — the tile at its focused 1.12 — 16 frames), and `face()` puts the still
+  face on the tile. The
   wordmarks (Netflix, YouTube, Prime Video, Disney+, Max, Apple TV, Globoplay, Pluto TV, Hotmart, Spotify,
   Crunchyroll, Paramount+, Plex, Deezer) carry the name, so those tiles show no label; the symbols (Twitch, LG
   Channels, Music, Photo & Video, Settings, Web Browser) and the brands with no artwork (Hulu, Peacock, NFL) keep
   the name under it. The focused tile plays its GIF in a box of its own beside the row (`#shelf .animbox`, never
   inside `#tiles`): an animated image inside the tile, inside a scaled box or inside the scrolling row makes this TV
-  repaint that whole layer every frame (8-17 fps median frame time 50 ms); beside the row and drawn at the tile's own
-  224 × 126 it holds the 16.7 ms median, with a few slower frames on a focus change (the row itself already stutters
-  there). At rest the home stays at 0 DOM mutations and 60 fps. The shelf bar lights up with a ring
+  repaint that whole layer every frame (8-17 fps median frame time 50 ms); beside the row, measured and placed over
+  the *grown* tile (`offsetWidth × 1.12`, the GIF baked at that size — at 224 × 126 it drew a smaller copy inside the
+  focused tile), it holds the 16.7 ms median, with a few slower frames on a focus change (the row itself already
+  stutters there). The selector is `#shelf .animbox`: while it still said `#tiles` the box had no position at all and
+  painted at the shelf's own 0,0. At rest the home stays at 0 DOM mutations and 60 fps. The shelf bar lights up with a ring
   (`#shelfring`, opacity only) while the shelf has the focus. Rebuild the faces with
   `python3 tools/make_tiles.py --force` (Chrome and Pillow) after touching `web/brands.js` or the logo files;
   `--check` also writes every face into one image.

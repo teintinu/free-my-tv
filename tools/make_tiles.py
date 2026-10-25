@@ -31,6 +31,10 @@ WEB = os.path.join(ROOT, 'web')
 # scales it up a little when the tile takes the focus), but the animation is not: this TV draws an animated GIF of
 # 448 x 252 at 6 fps and one of 224 x 126 at 60, so the frames are captured big and stored at the size the TV shows.
 TILE_W, TILE_H, SCALE = 224, 126, 2
+# The focused tile grows 1.12 in CSS (`.tile.focus`), and the animation is drawn over the whole of it, not
+# inside it: at the resting 224 x 126 it showed as a smaller copy of the tile for the second it runs.
+FOCUS = 1.12
+GIF_W, GIF_H = int(round(TILE_W * FOCUS)), int(round(TILE_H * FOCUS))
 FRAMES, DELAY_MS = 16, 66
 PORT = 9344
 
@@ -215,21 +219,21 @@ def build_face(cdp, index, slug, art, check, force):
         shoot(cdp, path)
         frames.append(Image.open(path).convert('RGB'))
     width, height = frames[0].size
-    # The animation at the size the TV draws the tile (its own pixels, no resampling per frame).
-    small = [f.resize((TILE_W, TILE_H), Image.LANCZOS) for f in frames]
+    # The animation at the size the TV draws the focused tile (its own pixels, no resampling per frame).
+    small = [f.resize((GIF_W, GIF_H), Image.LANCZOS) for f in frames]
 
     # One palette for every frame, taken from the frames themselves: a palette per frame makes the flat colours
     # shimmer between frames of a GIF, which on a 55" panel is the first thing anyone notices.
-    sheet = Image.new('RGB', (TILE_W, TILE_H * len(small)))
+    sheet = Image.new('RGB', (GIF_W, GIF_H * len(small)))
     for i, f in enumerate(small):
-        sheet.paste(f, (0, i * TILE_H))
+        sheet.paste(f, (0, i * GIF_H))
     base = sheet.quantize(colors=96, method=Image.MEDIANCUT)
     pal = [f.quantize(palette=base, dither=Image.NONE) for f in small]
     pal[0].save(gif, save_all=True, append_images=pal[1:], duration=DELAY_MS, disposal=1, optimize=True)
     frames[0].save(png, optimize=True)   # the still face keeps the bigger copy: the focus grows the tile
     shutil.rmtree(tmp, ignore_errors=True)
     return 'built %s (%d x %d still, %d x %d animation, %d frames, %d KB)' % (
-        slug, width, height, TILE_W, TILE_H, FRAMES, os.path.getsize(gif) // 1024)
+        slug, width, height, GIF_W, GIF_H, FRAMES, os.path.getsize(gif) // 1024)
 
 
 def montage(path):
